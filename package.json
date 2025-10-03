@@ -1,0 +1,37 @@
+{
+  "name": "@posthog/agent",
+  "version": "1.0.0",
+  "description": "TypeScript agent framework wrapping Claude Agent SDK with Git-based workflow for PostHog tasks",
+  "module": "src/agent.ts",
+  "main": "src/agent.ts",
+  "type": "module",
+  "keywords": ["posthog", "claude", "agent", "ai", "git", "workflow", "typescript"],
+  "author": "PostHog",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PostHog/posthog-agent"
+  },
+  "scripts": {
+    "example": "bun run example-usage.ts",
+    "dev": "bun run example-usage.ts"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.1",
+    "dotenv": "^17.2.3"
+  },
+  "files": [
+    "src/**/*",
+    "README.md",
+    "CLAUDE.md"
+  ]
+}
