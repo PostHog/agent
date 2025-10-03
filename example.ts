@@ -3,7 +3,8 @@
 import { config } from "dotenv";
 config();
 
-import { Agent, ExecutionMode, PermissionMode } from './src/agent';
+import { Agent, PermissionMode } from './src/agent';
+import type { WorkflowExecutionOptions } from './src/workflow-types';
 
 async function testAgent() {
     const REPO_PATH = process.argv[2] || process.cwd();
@@ -22,26 +23,29 @@ async function testAgent() {
         posthogApiKey: process.env.POSTHOG_API_KEY,
         onEvent: (event) => {
             console.log(`[${event.type}]`, event);
-        }
+        },
+        debug: true,
     });
     
     if (TASK_ID) {
         console.log(`🎯 Running task: ${TASK_ID}`);
-        
-        // Suppress stderr during execution to hide Claude debug output
-        const originalStderr = process.stderr.write;
-        process.stderr.write = () => true;
-        
         try {
-            const result = await agent.runTask(TASK_ID, ExecutionMode.PLAN_AND_BUILD, {
+            // Example: list and run a workflow
+            await agent['workflowRegistry'].loadWorkflows();
+            const workflows = agent['workflowRegistry'].listWorkflows();
+            if (workflows.length === 0) {
+                throw new Error('No workflows available');
+            }
+            const selectedWorkflow = workflows[0];
+            const options: WorkflowExecutionOptions = {
                 repositoryPath: REPO_PATH,
-                permissionMode: PermissionMode.ACCEPT_EDITS
-            });
+                permissionMode: PermissionMode.ACCEPT_EDITS,
+                autoProgress: true,
+            };
+            const result = await agent.runWorkflow(TASK_ID, selectedWorkflow.id, options);
             console.log("✅ Done!");
             console.log(`📁 Plan stored in: .posthog/${TASK_ID}/plan.md`);
         } finally {
-            // Restore stderr
-            process.stderr.write = originalStderr;
         }
     } else {
         console.log("❌ Please provide a task ID");

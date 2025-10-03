@@ -4,17 +4,22 @@ export {
 } from './src/agent';
 
 export {
-    ExecutionMode,
     PermissionMode,
 } from './src/types';
 
 export type {
     Task,
     SupportingFile,
-    TaskExecutionResult,
     ExecutionResult,
     AgentConfig
 } from './src/types';
+
+export type {
+  WorkflowDefinition,
+  WorkflowStage,
+  WorkflowExecutionOptions,
+  AgentDefinition
+} from './src/workflow-types';
 
 export {
     Logger,

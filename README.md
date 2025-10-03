@@ -13,14 +13,14 @@ bun run example
 
 - **Git-Based Workflow**: Plans and artifacts stored in `.posthog/` folders and committed to Git
 - **PostHog Integration**: Fetches existing tasks from PostHog API
-- **Three Execution Modes**: PLAN_ONLY, BUILD_ONLY, PLAN_AND_BUILD
+- **Configurable Workflows**: Execute tasks via PostHog-defined or local workflows
 - **Branch Management**: Automatic branch creation for planning and implementation
 - **Event Streaming**: Real-time events for UI integration
 
 ## Usage
 
 ```typescript
-import { Agent, ExecutionMode } from '@posthog/agent';
+import { Agent, PermissionMode } from '@posthog/agent';
 
 const agent = new Agent({
     workingDirectory: "/path/to/repo",
@@ -28,9 +28,14 @@ const agent = new Agent({
     posthogApiKey: process.env.POSTHOG_API_KEY
 });
 
-// Fetch and execute a PostHog task
-const task = await agent.fetchTask("task_abc123");
-const result = await agent.runTask(task, ExecutionMode.PLAN_AND_BUILD);
+// Run by workflow
+const taskId = "task_abc123";
+const workflowId = "workflow_123";
+await agent.runWorkflow(taskId, workflowId, {
+  repositoryPath: "/path/to/repo",
+  permissionMode: PermissionMode.ACCEPT_EDITS,
+  autoProgress: true,
+});
 ```
 
 ## Workflow
@@ -40,17 +45,24 @@ Each task execution creates Git branches:
 1. **Planning**: `posthog/task-{id}-planning` - Contains plan in `.posthog/{id}/plan.md`
 2. **Implementation**: `posthog/task-{id}-implementation` - Contains code changes
 
-## Three Execution Modes
+## Manual Stages and Resume
+
+- Manual stages (no agent, or `is_manual_only`) are stop-points: the SDK will not auto-advance.
+- On manual stages, a PR is opened by default for human review (configurable per stage with `openPullRequest`).
+
+Resume from the current stage:
 
 ```typescript
-// Plan only - generates plan and commits to planning branch
-await agent.runTask(taskId, ExecutionMode.PLAN_ONLY);
+await agent.runWorkflow(taskId, workflowId, {
+  repositoryPath: "/path/to/repo",
+  permissionMode: PermissionMode.ACCEPT_EDITS,
+  resumeFromCurrentStage: true,
+  autoProgress: true, // ignored on manual stages
+});
 
-// Build only - uses existing plan, creates implementation branch  
-await agent.runTask(taskId, ExecutionMode.BUILD_ONLY);
-
-// Plan and build - full workflow
-await agent.runTask(taskId, ExecutionMode.PLAN_AND_BUILD);
+// Or explicitly progress via API then resume
+await agent.progressToNextStage(taskId);
+await agent.runWorkflow(taskId, workflowId, { resumeFromCurrentStage: true });
 ```
 
 ## File System

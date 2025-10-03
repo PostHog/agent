@@ -1,4 +1,5 @@
-import { Task, SupportingFile, PostHogAPIConfig } from './types';
+import type { Task, SupportingFile, PostHogAPIConfig } from './types';
+import type { WorkflowDefinition, AgentDefinition } from './workflow-types';
 
 interface PostHogApiResponse<T> {
   results?: T[];
@@ -140,4 +141,28 @@ export class PostHogAPIClient {
     return this.apiRequest<TaskProgressResponse>(`/api/projects/${teamId}/tasks/${taskId}/progress/`);
   }
 
+  // Workflow endpoints
+  async fetchWorkflow(workflowId: string): Promise<WorkflowDefinition> {
+    const teamId = await this.getTeamId();
+    return this.apiRequest<WorkflowDefinition>(`/api/projects/${teamId}/task_workflows/${workflowId}/`);
+  }
+
+  async listWorkflows(): Promise<WorkflowDefinition[]> {
+    const teamId = await this.getTeamId();
+    const response = await this.apiRequest<PostHogApiResponse<WorkflowDefinition>>(`/api/projects/${teamId}/task_workflows/`);
+    return response.results || [];
+  }
+
+  // Agent catalog exposure
+  async listAgents(): Promise<AgentDefinition[]> {
+    return this.apiRequest<AgentDefinition[]>(`/api/agents/`);
+  }
+
+  async progressTask(taskId: string, options?: { next_stage_id?: string; auto?: boolean }): Promise<Task> {
+    const teamId = await this.getTeamId();
+    return this.apiRequest<Task>(`/api/projects/${teamId}/tasks/${taskId}/progress_task/`, {
+      method: 'POST',
+      body: JSON.stringify(options || {}),
+    });
+  }
 }

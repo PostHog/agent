@@ -24,11 +24,7 @@ export interface SupportingFile {
   created_at: string;
 }
 
-export enum ExecutionMode {
-  PLAN_AND_BUILD = "plan_and_build",
-  PLAN_ONLY = "plan_only", 
-  BUILD_ONLY = "build_only"
-}
+// Removed legacy ExecutionMode in favor of configurable workflows
 
 export enum PermissionMode {
   PLAN = "plan",
@@ -206,7 +202,7 @@ export interface TaskExecutionResult {
   task: Task;
   plan?: string;
   executionResult?: ExecutionResult;
-  mode: ExecutionMode;
+  // Deprecated: mode removed in workflow-based execution
 }
 
 export interface AgentConfig {

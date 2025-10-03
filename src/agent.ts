@@ -1,15 +1,6 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { 
-  Task, 
-  ExecutionOptions, 
-  TaskExecutionResult, 
-  ExecutionResult, 
-  PlanResult, 
-  AgentConfig 
-} from './types';
-import { 
-  ExecutionMode 
-} from './types';
+import type { Task, ExecutionResult, PlanResult, AgentConfig } from './types';
+import type { WorkflowDefinition, WorkflowStage, WorkflowExecutionOptions } from './workflow-types';
 import { TaskManager } from './task-manager';
 import { PostHogAPIClient } from './posthog-api';
 import { PostHogFileManager } from './file-manager';
@@ -19,6 +10,10 @@ import { EventTransformer } from './event-transformer';
 import { PLANNING_SYSTEM_PROMPT } from './agents/planning';
 import { EXECUTION_SYSTEM_PROMPT } from './agents/execution';
 import { Logger } from './logger';
+import { AgentRegistry } from './agent-registry';
+import { WorkflowRegistry } from './workflow-registry';
+import { StageExecutor } from './stage-executor';
+import { PromptBuilder } from './prompt-builder';
 
 export class Agent {
     private workingDirectory: string;
@@ -30,6 +25,9 @@ export class Agent {
     private templateManager: TemplateManager;
     private eventTransformer: EventTransformer;
     private logger: Logger;
+    private agentRegistry: AgentRegistry;
+    private workflowRegistry: WorkflowRegistry;
+    private stageExecutor: StageExecutor;
     public debug: boolean;
 
     constructor(config: AgentConfig = {}) {
@@ -50,6 +48,7 @@ export class Agent {
             // TODO: Add author config from environment or config
         });
         this.templateManager = new TemplateManager();
+        this.agentRegistry = new AgentRegistry();
 
         if (config.posthogApiUrl && config.posthogApiKey) {
             this.posthogAPI = new PostHogAPIClient({
@@ -57,6 +56,14 @@ export class Agent {
                 apiKey: config.posthogApiKey,
             });
         }
+
+        this.workflowRegistry = new WorkflowRegistry(this.posthogAPI);
+        const promptBuilder = new PromptBuilder({
+            getTaskFiles: (taskId: string) => this.getTaskFiles(taskId),
+            generatePlanTemplate: (vars: Record<string, string>) => this.templateManager.generatePlan(vars),
+            logger: this.logger.child('PromptBuilder')
+        });
+        this.stageExecutor = new StageExecutor(this.agentRegistry, this.logger, promptBuilder);
     }
 
     /**
@@ -67,76 +74,176 @@ export class Agent {
         this.logger.setDebug(enabled);
     }
 
-    // Task-based execution
-    async runTask(
-        taskOrId: Task | string, 
-        mode: ExecutionMode, 
-        options: ExecutionOptions = {}
-    ): Promise<TaskExecutionResult> {
-        
-        let task: Task;
-        
-        if (typeof taskOrId === 'string') {
-            this.logger.debug('Fetching task by ID', { taskId: taskOrId });
-            task = await this.fetchTask(taskOrId);
-        } else {
-            task = taskOrId;
+    // Workflow-based execution
+    async runWorkflow(taskOrId: Task | string, workflowId: string, options: WorkflowExecutionOptions = {}): Promise<{ task: Task; workflow: WorkflowDefinition }> {
+        const task = typeof taskOrId === 'string' ? await this.fetchTask(taskOrId) : taskOrId;
+        await this.workflowRegistry.loadWorkflows();
+        const workflow = this.workflowRegistry.getWorkflow(workflowId);
+        if (!workflow) {
+            throw new Error(`Workflow ${workflowId} not found`);
+        }
+
+        // Ensure task is assigned to workflow and positioned at first stage
+        if (this.posthogAPI) {
+            try {
+                if ((task.workflow as any) !== workflowId) {
+                    await this.posthogAPI.updateTask(task.id, { workflow: workflowId } as any);
+                    (task as any).workflow = workflowId;
+                }
+                if (!(task as any).current_stage && workflow.stages.length > 0) {
+                    const firstStage = [...workflow.stages].sort((a, b) => a.position - b.position)[0];
+                    await this.posthogAPI.updateTaskStage(task.id, firstStage.id);
+                    (task as any).current_stage = firstStage.id;
+                }
+            } catch (e) {
+                this.logger.warn('Failed to sync task workflow/stage before execution', { error: (e as Error).message });
+            }
         }
 
         const executionId = this.taskManager.generateExecutionId();
-        this.logger.info('Starting task execution', { 
-            taskId: task.id, 
-            taskTitle: task.title,
-            mode, 
-            executionId 
-        });
-        
-        const executionState = this.taskManager.startExecution(
-            task.id, 
-            mode === ExecutionMode.PLAN_AND_BUILD ? 'plan_and_build' :
-            mode === ExecutionMode.PLAN_ONLY ? 'plan_only' : 'build_only',
-            executionId
-        );
+        this.logger.info('Starting workflow execution', { taskId: task.id, workflowId, executionId });
+        this.taskManager.startExecution(task.id, 'plan_and_build', executionId);
 
         try {
-            let result: TaskExecutionResult;
-            
-            switch (mode) {
-                case ExecutionMode.PLAN_AND_BUILD:
-                    this.logger.debug('Running plan and build mode');
-                    result = await this.runPlanAndBuild(task, options);
-                    break;
-                case ExecutionMode.PLAN_ONLY:
-                    this.logger.debug('Running plan only mode');
-                    result = await this.runPlanOnly(task, options);
-                    break;
-                case ExecutionMode.BUILD_ONLY:
-                    this.logger.debug('Running build only mode');
-                    result = await this.runBuildOnly(task, options);
-                    break;
-                default:
-                    throw new Error(`Unknown execution mode: ${mode}`);
+            const orderedStages = [...workflow.stages].sort((a, b) => a.position - b.position);
+            let startIndex = 0;
+            const currentStageId = (task as any).current_stage as string | undefined;
+
+            // If task is already at the last stage, fail gracefully without progressing
+            if (currentStageId) {
+                const currIdx = orderedStages.findIndex(s => s.id === currentStageId);
+                const atLastStage = currIdx >= 0 && currIdx === orderedStages.length - 1;
+                if (atLastStage) {
+                    this.emitEvent(this.eventTransformer.createStatusEvent('no_next_stage', { stage: orderedStages[currIdx].key }));
+                    this.taskManager.completeExecution(executionId, { task, workflow });
+                    return { task, workflow };
+                }
             }
-            
-            this.taskManager.completeExecution(executionId, result);
-            this.logger.info('Task execution completed successfully', { taskId: task.id, executionId });
-            return result;
-            
+
+            if (options.resumeFromCurrentStage && currentStageId) {
+                const idx = orderedStages.findIndex(s => s.id === currentStageId);
+                if (idx >= 0) startIndex = idx;
+            }
+
+            // Align server-side stage when restarting from the beginning
+            if (this.posthogAPI) {
+                const targetStage = orderedStages[startIndex];
+                if (targetStage && targetStage.id !== currentStageId) {
+                    try { await this.posthogAPI.updateTaskStage(task.id, targetStage.id); (task as any).current_stage = targetStage.id; } catch {}
+                }
+            }
+
+            for (let i = startIndex; i < orderedStages.length; i++) {
+                const stage = orderedStages[i];
+                await this.executeStage(task, stage, options);
+                if (options.autoProgress) {
+                    const hasNext = i < orderedStages.length - 1;
+                    if (hasNext) {
+                        await this.progressToNextStage(task.id);
+                    }
+                }
+            }
+            this.taskManager.completeExecution(executionId, { task, workflow });
+            return { task, workflow };
         } catch (error) {
-            this.logger.error('Task execution failed', error as Error);
             this.taskManager.failExecution(executionId, error as Error);
             throw error;
         }
     }
 
-    // Direct prompt execution - we may not need this
-    async run(prompt: string, options: ExecutionOptions = {}): Promise<ExecutionResult> {
+    async executeStage(task: Task, stage: WorkflowStage, options: WorkflowExecutionOptions = {}): Promise<void> {
+        this.emitEvent(this.eventTransformer.createStatusEvent('stage_start', { stage: stage.key }));
+        const overrides = options.stageOverrides?.[stage.key];
+        const agentName = stage.agent_name || 'code_generation';
+        const agentDef = this.agentRegistry.getAgent(agentName);
+        const isManual = stage.is_manual_only === true;
+        const stageKeyLower = (stage.key || '').toLowerCase().trim();
+        const isPlanningByKey = stageKeyLower === 'plan' || stageKeyLower.includes('plan');
+        const isPlanning = !isManual && ((agentDef?.agent_type === 'planning') || isPlanningByKey);
+        const shouldCreatePlanningBranch = overrides?.createPlanningBranch !== false; // default true
+        const shouldCreateImplBranch = overrides?.createImplementationBranch !== false; // default true
+
+        if (isPlanning && shouldCreatePlanningBranch) {
+            const planningBranch = await this.createPlanningBranch(task.id);
+            await this.updateTaskBranch(task.id, planningBranch);
+            this.emitEvent(this.eventTransformer.createStatusEvent('branch_created', { stage: stage.key, branch: planningBranch }));
+        } else if (!isPlanning && !isManual && shouldCreateImplBranch) {
+            const implBranch = await this.createImplementationBranch(task.id);
+            await this.updateTaskBranch(task.id, implBranch);
+            this.emitEvent(this.eventTransformer.createStatusEvent('branch_created', { stage: stage.key, branch: implBranch }));
+        }
+
+        const result = await this.stageExecutor.execute(task, stage, options);
+
+        if (result.plan) {
+            await this.writePlan(task.id, result.plan);
+            await this.commitPlan(task.id, task.title);
+            this.emitEvent(this.eventTransformer.createStatusEvent('commit_made', { stage: stage.key, kind: 'plan' }));
+        }
+
+        if (isManual) {
+            const defaultOpenPR = true; // manual stages default to PR for review
+            const openPR = overrides?.openPullRequest ?? defaultOpenPR;
+            if (openPR) {
+                // Ensure we're on an implementation branch for PRs
+                let branchName = await this.gitManager.getCurrentBranch();
+                const onTaskBranch = branchName.includes(`posthog/task-${task.id}`);
+                if (!onTaskBranch && (overrides?.createImplementationBranch !== false)) {
+                    const implBranch = await this.createImplementationBranch(task.id);
+                    await this.updateTaskBranch(task.id, implBranch);
+                    branchName = implBranch;
+                    this.emitEvent(this.eventTransformer.createStatusEvent('branch_created', { stage: stage.key, branch: implBranch }));
+                }
+                try {
+                    const prUrl = await this.createPullRequest(task.id, branchName, task.title, task.description);
+                    await this.updateTaskBranch(task.id, branchName);
+                    await this.attachPullRequestToTask(task.id, prUrl);
+                    this.emitEvent(this.eventTransformer.createStatusEvent('pr_created', { stage: stage.key, prUrl }));
+                } catch {}
+            }
+            // Do not auto-progress on manual stages
+            this.emitEvent(this.eventTransformer.createStatusEvent('stage_complete', { stage: stage.key }));
+            return;
+        }
+
+        if (result.results) {
+            const existingPlan = await this.readPlan(task.id);
+            const planSummary = existingPlan ? existingPlan.split('\n')[0] : undefined;
+            await this.commitImplementation(task.id, task.title, planSummary);
+            this.emitEvent(this.eventTransformer.createStatusEvent('commit_made', { stage: stage.key, kind: 'implementation' }));
+        }
+
+        // PR creation on complete stage (or if explicitly requested), regardless of whether edits occurred
+        {
+            const defaultOpenPR = stage.key.toLowerCase().includes('complete');
+            const openPR = overrides?.openPullRequest ?? defaultOpenPR;
+            if (openPR) {
+                const branchName = await this.gitManager.getCurrentBranch();
+                try {
+                    const prUrl = await this.createPullRequest(task.id, branchName, task.title, task.description);
+                    await this.updateTaskBranch(task.id, branchName);
+                    await this.attachPullRequestToTask(task.id, prUrl);
+                    this.emitEvent(this.eventTransformer.createStatusEvent('pr_created', { stage: stage.key, prUrl }));
+                } catch {}
+            }
+        }
+
+        this.emitEvent(this.eventTransformer.createStatusEvent('stage_complete', { stage: stage.key }));
+    }
+
+    async progressToNextStage(taskId: string): Promise<void> {
+        if (!this.posthogAPI) throw new Error('PostHog API not configured. Cannot progress stage.');
+        await this.posthogAPI.progressTask(taskId, { auto: true });
+    }
+
+    // Direct prompt execution - still supported for low-level usage
+    async run(prompt: string, options: { repositoryPath?: string; permissionMode?: import('./types').PermissionMode } = {}): Promise<ExecutionResult> {
         const response = query({
             prompt,
             options: {
                 model: "claude-4-5-sonnet",
                 cwd: options.repositoryPath || this.workingDirectory,
-                permissionMode: options.permissionMode || "default",
+                permissionMode: (options.permissionMode as any) || "default",
                 settingSources: ["local"],
             },
         });
@@ -305,319 +412,6 @@ Generated by PostHog Agent`;
         return null;
     }
 
-    // Private execution methods
-    private async runPlanAndBuild(task: Task, options: ExecutionOptions): Promise<TaskExecutionResult> {
-        // Phase 1: Planning
-        this.emitEvent(this.eventTransformer.createStatusEvent('planning'));
-
-        const planningBranchName = await this.createPlanningBranch(task.id);
-
-        // Update task with planning branch
-        try {
-            await this.updateTaskBranch(task.id, planningBranchName);
-        } catch (error) {
-            this.logger.error('Failed to update task with planning branch', error as Error);
-        }
-
-        const planResult = await this.runPlanningPhase(task, options);
-
-        // Plan is already formatted from the template in the prompt
-        await this.writePlan(task.id, planResult.plan);
-
-        await this.commitPlan(task.id, task.title);
-
-        this.emitEvent(this.eventTransformer.createStatusEvent('plan_complete', { plan: planResult.plan }));
-
-        // Phase 2: Execution
-        this.emitEvent(this.eventTransformer.createStatusEvent('executing'));
-
-        const implementationBranchName = await this.createImplementationBranch(task.id, planningBranchName);
-
-        // Update task with implementation branch
-        try {
-            await this.updateTaskBranch(task.id, implementationBranchName);
-        } catch (error) {
-            this.logger.error('Failed to update task with implementation branch', error as Error);
-        }
-
-        const executionResult = await this.runExecutionPhase(task, options);
-
-        await this.commitImplementation(task.id, task.title, planResult.plan.split('\n')[0]); // Use first line as summary
-
-        // Create PR and attach to task
-        try {
-            this.emitEvent(this.eventTransformer.createStatusEvent('creating_pr'));
-            const prUrl = await this.createPullRequest(task.id, implementationBranchName, task.title, task.description);
-            await this.attachPullRequestToTask(task.id, prUrl);
-            this.emitEvent(this.eventTransformer.createStatusEvent('pr_created', { prUrl }));
-        } catch (error) {
-            this.logger.error('Failed to create or attach PR', error as Error);
-            // Don't fail the entire task if PR creation fails
-        }
-
-        this.emitEvent(this.eventTransformer.createStatusEvent('done'));
-
-        return {
-            task,
-            plan: planResult.plan,
-            executionResult,
-            mode: ExecutionMode.PLAN_AND_BUILD
-        };
-    }
-
-    private async runPlanOnly(task: Task, options: ExecutionOptions): Promise<TaskExecutionResult> {
-        this.emitEvent(this.eventTransformer.createStatusEvent('planning'));
-
-        const planningBranchName = await this.createPlanningBranch(task.id);
-
-        // Update task with planning branch
-        try {
-            await this.updateTaskBranch(task.id, planningBranchName);
-        } catch (error) {
-            this.logger.error('Failed to update task with planning branch', error as Error);
-        }
-
-        const planResult = await this.runPlanningPhase(task, options);
-
-        // Plan is already formatted from the template in the prompt
-        await this.writePlan(task.id, planResult.plan);
-
-        await this.commitPlan(task.id, task.title);
-
-        this.emitEvent(this.eventTransformer.createStatusEvent('plan_complete', { plan: planResult.plan }));
-
-        return {
-            task,
-            plan: planResult.plan,
-            mode: ExecutionMode.PLAN_ONLY
-        };
-    }
-
-    private async runBuildOnly(task: Task, options: ExecutionOptions): Promise<TaskExecutionResult> {
-        this.emitEvent(this.eventTransformer.createStatusEvent('executing'));
-
-        const implementationBranchName = await this.createImplementationBranch(task.id);
-
-        // Update task with implementation branch
-        try {
-            await this.updateTaskBranch(task.id, implementationBranchName);
-        } catch (error) {
-            this.logger.error('Failed to update task with implementation branch', error as Error);
-        }
-
-        const executionResult = await this.runExecutionPhase(task, options);
-
-        const existingPlan = await this.readPlan(task.id);
-        const planSummary = existingPlan ? existingPlan.split('\n')[0] : undefined;
-
-        await this.commitImplementation(task.id, task.title, planSummary);
-
-        // Create PR and attach to task
-        try {
-            this.emitEvent(this.eventTransformer.createStatusEvent('creating_pr'));
-            const prUrl = await this.createPullRequest(task.id, implementationBranchName, task.title, task.description);
-            await this.attachPullRequestToTask(task.id, prUrl);
-            this.emitEvent(this.eventTransformer.createStatusEvent('pr_created', { prUrl }));
-        } catch (error) {
-            this.logger.error('Failed to create or attach PR', error as Error);
-            // Don't fail the entire task if PR creation fails
-        }
-
-        this.emitEvent(this.eventTransformer.createStatusEvent('done'));
-
-        return {
-            task,
-            executionResult,
-            mode: ExecutionMode.BUILD_ONLY
-        };
-    }
-
-    private async runPlanningPhase(task: Task, options: ExecutionOptions): Promise<PlanResult> {
-        const prompt = await this.buildPlanningPrompt(task);
-        
-        const response = query({
-            prompt,
-            options: {
-                model: "claude-4-5-sonnet",
-                cwd: options.repositoryPath || this.workingDirectory,
-                permissionMode: "plan", // Built-in Claude SDK planning mode
-                settingSources: ["local"],
-            },
-        });
-
-        let plan = "";
-        let allAssistantContent = "";
-        
-        for await (const message of response) {
-            this.logger.debug('Received Claude SDK message', { type: message.type });
-            const transformedEvent = this.eventTransformer.transform(message);
-            this.emitEvent(transformedEvent);
-            
-            // Extract content from assistant messages
-            if (message.type === 'assistant' && message.message?.content) {
-                for (const content of message.message.content) {
-                    if (content.type === 'text' && content.text) {
-                        allAssistantContent += content.text + "\n";
-                    }
-                }
-            }
-            
-            // Check for exit_plan_mode tool use in assistant messages
-            if (message.type === 'assistant' && message.message?.content) {
-                for (const content of message.message.content) {
-                    if (content.type === 'tool_use' && content.name === 'ExitPlanMode') {
-                        plan = content.input?.plan || "";
-                    }
-                }
-            }
-            
-            // Check for exit_plan_mode tool results in user messages
-            if (message.type === 'user' && message.message?.content) {
-                for (const content of message.message.content) {
-                    if (content.type === 'tool_result' && content.tool_use_id) {
-                        // Find the corresponding tool_use to check if it was ExitPlanMode
-                        // For now, we'll assume any tool_result with plan content is our plan
-                        if (content.content && typeof content.content === 'string' && content.content.includes('# Implementation Plan')) {
-                            plan = content.content;
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Use exit_plan_mode content if available, otherwise use all assistant content
-        if (!plan && allAssistantContent.trim()) {
-            plan = allAssistantContent.trim();
-        }
-        
-        this.logger.info('Planning phase completed', { planLength: plan.length });
-        return { plan };
-    }
-
-    private async runExecutionPhase(task: Task, options: ExecutionOptions): Promise<ExecutionResult> {
-        
-        const prompt = await this.buildExecutionPrompt(task);
-        this.logger.debug('Built execution prompt', { promptLength: prompt.length });
-        
-        this.logger.info('Starting execution phase with Claude SDK', {
-            model: "claude-4-5-sonnet",
-            cwd: options.repositoryPath || this.workingDirectory,
-            permissionMode: options.permissionMode || "default"
-        });
-        
-        const response = query({
-            prompt,
-            options: {
-                model: "claude-4-5-sonnet", 
-                cwd: options.repositoryPath || this.workingDirectory,
-                permissionMode: options.permissionMode || "default",
-                settingSources: ["local"],
-            },
-        });
-
-        const results = [];
-        for await (const message of response) {
-            this.logger.debug('Received Claude SDK message', { type: message.type });
-            const transformedEvent = this.eventTransformer.transform(message);
-            this.emitEvent(transformedEvent);
-            results.push(message);
-        }
-        
-        this.logger.info('Execution phase completed', { resultCount: results.length });
-        return { results };
-    }
-
-    private async buildPlanningPrompt(task: Task): Promise<string> {
-        let prompt = PLANNING_SYSTEM_PROMPT;
-        
-        prompt += `\n\n## Current Task
-
-**Task**: ${task.title}
-**Description**: ${task.description}`;
-
-        if (task.primary_repository) {
-            prompt += `\n**Repository**: ${task.primary_repository}`;
-        }
-
-        // Include existing supporting files as context from file system
-        try {
-            const taskFiles = await this.getTaskFiles(task.id);
-            const contextFiles = taskFiles.filter(f => f.type === 'context' || f.type === 'reference');
-            
-            if (contextFiles.length > 0) {
-                prompt += `\n\n## Supporting Files`;
-                for (const file of contextFiles) {
-                    prompt += `\n\n### ${file.name} (${file.type})\n${file.content}`;
-                }
-            }
-        } catch (error) {
-            // No existing files, continue without them
-            this.logger.debug('No existing task files found', { taskId: task.id });
-        }
-
-        // Generate the plan template for Claude to fill in
-        const templateVariables = {
-            task_id: task.id,
-            task_title: task.title,
-            task_description: task.description,
-            date: new Date().toISOString().split('T')[0],
-            repository: task.primary_repository || ''
-        };
-        
-        const planTemplate = await this.templateManager.generatePlan(templateVariables);
-
-        prompt += `\n\nPlease analyze the codebase and create a detailed implementation plan for this task. Use the following template structure for your plan:
-
-${planTemplate}
-
-Fill in each section with specific, actionable information based on your analysis. Replace all placeholder content with actual details about this task.`;
-
-        return prompt;
-    }
-
-    private async buildExecutionPrompt(task: Task): Promise<string> {
-        let prompt = EXECUTION_SYSTEM_PROMPT;
-        
-        prompt += `\n\n## Current Task
-
-**Task**: ${task.title}
-**Description**: ${task.description}`;
-
-        if (task.primary_repository) {
-            prompt += `\n**Repository**: ${task.primary_repository}`;
-        }
-
-        // Include all supporting files as context from file system
-        try {
-            const taskFiles = await this.getTaskFiles(task.id);
-            const hasPlan = taskFiles.some(f => f.type === 'plan');
-            
-            if (taskFiles.length > 0) {
-                prompt += `\n\n## Context and Supporting Information`;
-                
-                for (const file of taskFiles) {
-                    if (file.type === 'plan') {
-                        prompt += `\n\n### Execution Plan\n${file.content}`;
-                    } else {
-                        prompt += `\n\n### ${file.name} (${file.type})\n${file.content}`;
-                    }
-                }
-            }
-
-            if (hasPlan) {
-                prompt += `\n\nPlease implement the changes described in the execution plan above. Follow the plan step-by-step and make the necessary file modifications. You must actually edit files and make changes - do not just analyze or review.`;
-            } else {
-                prompt += `\n\nPlease implement the changes described in the task above. You must actually edit files and make changes - do not just analyze or review.`;
-            }
-        } catch (error) {
-            // No supporting files found, just use task description
-            this.logger.debug('No supporting files found for execution', { taskId: task.id });
-            prompt += `\n\nPlease implement the changes described in the task above.`;
-        }
-        
-        return prompt;
-    }
-
     private emitEvent(event: any): void {
         if (this.debug && event.type !== 'token') {
             // Log all events except tokens (too verbose)
@@ -627,5 +421,6 @@ Fill in each section with specific, actionable information based on your analysi
     }
 }
 
-export { ExecutionMode, PermissionMode } from './types';
-export type { Task, SupportingFile, TaskExecutionResult, ExecutionResult, AgentConfig } from './types';
+export { PermissionMode } from './types';
+export type { Task, SupportingFile, ExecutionResult, AgentConfig } from './types';
+export type { WorkflowDefinition, WorkflowStage, WorkflowExecutionOptions } from './workflow-types';
