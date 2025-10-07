@@ -1,5 +1,5 @@
-import type { Task, SupportingFile, PostHogAPIConfig } from './types';
-import type { WorkflowDefinition, AgentDefinition } from './workflow-types';
+import type { Task, SupportingFile, PostHogAPIConfig } from './types.js';
+import type { WorkflowDefinition, AgentDefinition } from './workflow-types.js';
 
 interface PostHogApiResponse<T> {
   results?: T[];

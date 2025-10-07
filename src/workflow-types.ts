@@ -1,4 +1,4 @@
-import type { PermissionMode, AgentEvent } from './types';
+import type { PermissionMode, AgentEvent } from './types.js';
 
 export type AgentType = 'planning' | 'execution' | 'review' | 'testing';
 
@@ -49,5 +49,4 @@ export interface WorkflowExecutionOptions {
   onEvent?: (event: AgentEvent) => void;
   queryOverrides?: Record<string, any>;
 }
-
 

@@ -1,4 +1,4 @@
-import type { AgentDefinition, AgentType } from './workflow-types';
+import type { AgentDefinition, AgentType } from './workflow-types.js';
 
 export class AgentRegistry {
   private agentsByName: Map<string, AgentDefinition> = new Map();
@@ -56,5 +56,4 @@ export class AgentRegistry {
     return this.listAgents().map(({ id, name, agent_type, description }) => ({ id, name, agent_type, description }));
   }
 }
-
 

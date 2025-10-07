@@ -1,13 +1,13 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { Logger } from './utils/logger';
-import { EventTransformer } from './event-transformer';
-import { AgentRegistry } from './agent-registry';
-import type { Task } from './types';
-import type { WorkflowStage, WorkflowStageExecutionResult, WorkflowExecutionOptions } from './workflow-types';
-import { PLANNING_SYSTEM_PROMPT } from './agents/planning';
-import { EXECUTION_SYSTEM_PROMPT } from './agents/execution';
-import { PromptBuilder } from './prompt-builder';
-import { POSTHOG_MCP } from './utils/mcp';
+import { Logger } from './utils/logger.js';
+import { EventTransformer } from './event-transformer.js';
+import { AgentRegistry } from './agent-registry.js';
+import type { Task } from './types.js';
+import type { WorkflowStage, WorkflowStageExecutionResult, WorkflowExecutionOptions } from './workflow-types.js';
+import { PLANNING_SYSTEM_PROMPT } from './agents/planning.js';
+import { EXECUTION_SYSTEM_PROMPT } from './agents/execution.js';
+import { PromptBuilder } from './prompt-builder.js';
+import { POSTHOG_MCP } from './utils/mcp.js';
 
 export class StageExecutor {
   private registry: AgentRegistry;
@@ -133,5 +133,4 @@ export class StageExecutor {
     return { results };
   }
 }
-
 

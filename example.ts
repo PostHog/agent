@@ -3,8 +3,8 @@
 import { config } from "dotenv";
 config();
 
-import { Agent, PermissionMode } from './src/agent';
-import type { WorkflowExecutionOptions } from './src/workflow-types';
+import { Agent, PermissionMode } from './src/agent.js';
+import type { WorkflowExecutionOptions } from './src/workflow-types.js';
 
 async function testAgent() {
     const REPO_PATH = process.argv[2] || process.cwd();

@@ -1,5 +1,5 @@
-import type { WorkflowDefinition } from './workflow-types';
-import { PostHogAPIClient } from './posthog-api';
+import type { WorkflowDefinition } from './workflow-types.js';
+import { PostHogAPIClient } from './posthog-api.js';
 
 export class WorkflowRegistry {
   private workflowsById: Map<string, WorkflowDefinition> = new Map();
@@ -27,5 +27,4 @@ export class WorkflowRegistry {
     return Array.from(this.workflowsById.values());
   }
 }
-
 

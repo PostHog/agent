@@ -1,6 +1,6 @@
-import type { Task } from './types';
-import type { TemplateVariables } from './template-manager';
-import { Logger } from './utils/logger';
+import type { Task } from './types.js';
+import type { TemplateVariables } from './template-manager.js';
+import { Logger } from './utils/logger.js';
 
 export interface PromptBuilderDeps {
   getTaskFiles: (taskId: string) => Promise<any[]>;
@@ -88,6 +88,5 @@ export class PromptBuilder {
     return prompt;
   }
 }
-
 
 
