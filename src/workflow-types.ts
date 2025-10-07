@@ -32,6 +32,7 @@ export interface StageOverrideOptions {
   createPlanningBranch?: boolean;
   createImplementationBranch?: boolean;
   openPullRequest?: boolean;
+  queryOverrides?: Record<string, any>;
 }
 
 export interface WorkflowStageExecutionResult {
@@ -46,6 +47,7 @@ export interface WorkflowExecutionOptions {
   resumeFromCurrentStage?: boolean;
   stageOverrides?: Record<string, StageOverrideOptions>;
   onEvent?: (event: AgentEvent) => void;
+  queryOverrides?: Record<string, any>;
 }
 
 

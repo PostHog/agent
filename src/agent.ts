@@ -9,7 +9,7 @@ import { TemplateManager } from './template-manager';
 import { EventTransformer } from './event-transformer';
 import { PLANNING_SYSTEM_PROMPT } from './agents/planning';
 import { EXECUTION_SYSTEM_PROMPT } from './agents/execution';
-import { Logger } from './logger';
+import { Logger } from './utils/logger';
 import { AgentRegistry } from './agent-registry';
 import { WorkflowRegistry } from './workflow-registry';
 import { StageExecutor } from './stage-executor';
@@ -60,7 +60,7 @@ export class Agent {
         this.workflowRegistry = new WorkflowRegistry(this.posthogAPI);
         const promptBuilder = new PromptBuilder({
             getTaskFiles: (taskId: string) => this.getTaskFiles(taskId),
-            generatePlanTemplate: (vars: Record<string, string>) => this.templateManager.generatePlan(vars),
+            generatePlanTemplate: (vars) => this.templateManager.generatePlan(vars),
             logger: this.logger.child('PromptBuilder')
         });
         this.stageExecutor = new StageExecutor(this.agentRegistry, this.logger, promptBuilder);
@@ -237,15 +237,17 @@ export class Agent {
     }
 
     // Direct prompt execution - still supported for low-level usage
-    async run(prompt: string, options: { repositoryPath?: string; permissionMode?: import('./types').PermissionMode } = {}): Promise<ExecutionResult> {
+    async run(prompt: string, options: { repositoryPath?: string; permissionMode?: import('./types').PermissionMode; queryOverrides?: Record<string, any> } = {}): Promise<ExecutionResult> {
+        const baseOptions: Record<string, any> = {
+            model: "claude-4-5-sonnet",
+            cwd: options.repositoryPath || this.workingDirectory,
+            permissionMode: (options.permissionMode as any) || "default",
+            settingSources: ["local"],
+        };
+
         const response = query({
             prompt,
-            options: {
-                model: "claude-4-5-sonnet",
-                cwd: options.repositoryPath || this.workingDirectory,
-                permissionMode: (options.permissionMode as any) || "default",
-                settingSources: ["local"],
-            },
+            options: { ...baseOptions, ...(options.queryOverrides || {}) },
         });
 
         const results = [];

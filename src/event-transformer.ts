@@ -1,4 +1,4 @@
-import { AgentEvent } from './types.js';
+import type { AgentEvent } from './types.js';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 export class EventTransformer {

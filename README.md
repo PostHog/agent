@@ -101,6 +101,42 @@ const result = await agent.runTask(taskId, userSelectedMode, {
 - PostHog API access
 - Claude API access via `@anthropic-ai/claude-agent-sdk`
 
-## Development
 
-This replaces `@posthog/code-agent` with Git-based artifact storage, PostHog task integration, and branch-based review workflow.
+## Stage overrides and query overrides
+
+You can customize behavior per workflow stage using `stageOverrides`, and pass low-level model options using `queryOverrides`.
+
+```ts
+await agent.runWorkflow(taskId, workflowId, {
+  repositoryPath: "/path/to/repo",
+  // Global defaults for this run
+  permissionMode: PermissionMode.ACCEPT_EDITS,
+  queryOverrides: { model: 'claude-3-7-sonnet' },
+
+  // Per-stage overrides (keys must match your workflow's stage keys)
+  stageOverrides: {
+    plan: {
+      permissionMode: PermissionMode.PLAN,
+      createPlanningBranch: true,
+      // Only applied during the planning stage
+      queryOverrides: { temperature: 0.2 }
+    },
+    build: {
+      createImplementationBranch: true,
+      openPullRequest: false,
+      // Inject custom MCP servers or any other query option
+      queryOverrides: {
+        mcpServers: {
+          // example: override or add servers
+        }
+      }
+    },
+    complete: {
+      // ensure a PR is opened at the end regardless of edits
+      openPullRequest: true
+    }
+  }
+});
+```
+
+Precedence for query options: base defaults in the SDK < global `queryOverrides` < per-stage `stageOverrides[stageKey].queryOverrides`.

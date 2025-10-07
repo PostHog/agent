@@ -2,10 +2,25 @@
   "name": "@posthog/agent",
   "version": "1.0.0",
   "description": "TypeScript agent framework wrapping Claude Agent SDK with Git-based workflow for PostHog tasks",
-  "module": "src/agent.ts",
-  "main": "src/agent.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "type": "module",
-  "keywords": ["posthog", "claude", "agent", "ai", "git", "workflow", "typescript"],
+  "keywords": [
+    "posthog",
+    "claude",
+    "agent",
+    "ai",
+    "git",
+    "workflow",
+    "typescript"
+  ],
   "author": "PostHog",
   "license": "MIT",
   "repository": {
@@ -13,25 +28,34 @@
     "url": "https://github.com/PostHog/posthog-agent"
   },
   "scripts": {
+    "build": "tsc --project tsconfig.build.json",
     "example": "bun run example-usage.ts",
-    "dev": "bun run example-usage.ts"
+    "dev": "bun run example-usage.ts",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "changeset publish",
+    "prepublishOnly": "bun run build"
   },
   "engines": {
-    "bun": ">=1.0.0"
+    "node": ">=20.0.0"
   },
   "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5.0.0"
+    "@changesets/cli": "^2.27.8",
+    "@types/bun": "latest",
+    "typescript": "^5.5.0"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.1",
     "dotenv": "^17.2.3"
   },
   "files": [
+    "dist/**/*",
     "src/**/*",
     "README.md",
     "CLAUDE.md"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "pnpm@10.14.0+sha512.ad27a79641b49c3e481a16a805baa71817a04bbe06a38d17e60e2eaee83f6a146c6a688125f5792e48dd5ba30e7da52a5cda4c3992b9ccf333f9ce223af84748"
 }

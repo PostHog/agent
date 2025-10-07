@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
-import { SupportingFile } from './types';
-import { Logger } from './logger';
+import type { SupportingFile } from './types';
+import { Logger } from './utils/logger';
 
 export interface TaskFile {
   name: string;

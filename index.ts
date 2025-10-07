@@ -1,31 +1,31 @@
 // Main entry point - re-exports from src
 export {
     Agent,
-} from './src/agent';
+} from './src/agent.js';
 
 export {
     PermissionMode,
-} from './src/types';
+} from './src/types.js';
 
 export type {
     Task,
     SupportingFile,
     ExecutionResult,
     AgentConfig
-} from './src/types';
+} from './src/types.js';
 
 export type {
   WorkflowDefinition,
   WorkflowStage,
   WorkflowExecutionOptions,
   AgentDefinition
-} from './src/workflow-types';
+} from './src/workflow-types.js';
 
 export {
     Logger,
     LogLevel,
-} from './src/logger';
+} from './src/utils/logger.js';
 
 export type {
     LoggerConfig
-} from './src/logger';
+} from './src/utils/logger.js';

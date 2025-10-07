@@ -1,9 +1,10 @@
 import type { Task } from './types';
-import { Logger } from './logger';
+import type { TemplateVariables } from './template-manager';
+import { Logger } from './utils/logger';
 
 export interface PromptBuilderDeps {
   getTaskFiles: (taskId: string) => Promise<any[]>;
-  generatePlanTemplate: (vars: Record<string, string>) => Promise<string>;
+  generatePlanTemplate: (vars: TemplateVariables) => Promise<string>;
   logger?: Logger;
 }
 
@@ -87,5 +88,6 @@ export class PromptBuilder {
     return prompt;
   }
 }
+
 
 

@@ -77,7 +77,7 @@ export class PostHogAPIClient {
   }
 
   private async getTeamId(): Promise<number> {
-    if (this._teamId) {
+    if (this._teamId !== null) {
       return this._teamId;
     }
 
@@ -88,8 +88,9 @@ export class PostHogAPIClient {
       throw new Error('No team found for user');
     }
 
-    this._teamId = userResponse.team.id;
-    return this._teamId;
+    const teamId = Number(userResponse.team.id);
+    this._teamId = teamId;
+    return teamId;
   }
 
   async fetchTask(taskId: string): Promise<Task> {
