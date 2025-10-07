@@ -1,4 +1,4 @@
-import { promises as fs } from 'fs';
+import { promises as fs, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -17,7 +17,15 @@ export class TemplateManager {
   constructor() {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = dirname(__filename);
-    this.templatesDir = join(__dirname, 'templates');
+    const candidateDirs = [
+      join(__dirname, 'templates'),
+      join(__dirname, '..', 'templates'),
+      join(__dirname, '..', '..', 'templates'),
+      join(__dirname, '..', '..', 'src', 'templates')
+    ];
+
+    const resolvedDir = candidateDirs.find((dir) => existsSync(dir));
+    this.templatesDir = resolvedDir ?? candidateDirs[0];
   }
 
   private async loadTemplate(templateName: string): Promise<string> {

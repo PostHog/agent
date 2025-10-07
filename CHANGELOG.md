@@ -1,5 +1,11 @@
 # @posthog/agent
 
+## 1.1.0
+
+### Minor Changes
+
+- Moved build over to rollup
+
 ## 1.0.2
 
 ### Patch Changes

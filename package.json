@@ -1,6 +1,6 @@
 {
   "name": "@posthog/agent",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "TypeScript agent framework wrapping Claude Agent SDK with Git-based workflow for PostHog tasks",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -28,7 +28,7 @@
     "url": "https://github.com/PostHog/posthog-agent"
   },
   "scripts": {
-    "build": "tsc --project tsconfig.build.json",
+    "build": "rimraf dist && rollup -c && tsc --project tsconfig.build.json --emitDeclarationOnly",
     "example": "bun run example-usage.ts",
     "dev": "bun run example-usage.ts",
     "changeset": "changeset",
@@ -41,7 +41,13 @@
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.8",
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-node-resolve": "^15.2.3",
     "@types/bun": "latest",
+    "rimraf": "^6.0.1",
+    "rollup": "^4.24.0",
+    "rollup-plugin-copy": "^3.5.0",
+    "rollup-plugin-typescript2": "^0.36.0",
     "typescript": "^5.5.0"
   },
   "dependencies": {
