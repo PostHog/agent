@@ -1,5 +1,11 @@
 # @posthog/agent
 
+## 1.2.0
+
+### Minor Changes
+
+- Add new funtion to write to posthog
+
 ## 1.1.0
 
 ### Minor Changes
