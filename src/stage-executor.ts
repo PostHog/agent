@@ -2,7 +2,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { Logger } from './utils/logger.js';
 import { EventTransformer } from './event-transformer.js';
 import { AgentRegistry } from './agent-registry.js';
-import type { Task } from './types.js';
+import type { AgentEvent, Task } from './types.js';
 import type { WorkflowStage, WorkflowStageExecutionResult, WorkflowExecutionOptions } from './workflow-types.js';
 import { PLANNING_SYSTEM_PROMPT } from './agents/planning.js';
 import { EXECUTION_SYSTEM_PROMPT } from './agents/execution.js';
@@ -14,8 +14,14 @@ export class StageExecutor {
   private logger: Logger;
   private eventTransformer: EventTransformer;
   private promptBuilder: PromptBuilder;
+  private eventHandler?: (event: AgentEvent) => void;
 
-  constructor(registry: AgentRegistry, logger: Logger, promptBuilder?: PromptBuilder) {
+  constructor(
+    registry: AgentRegistry,
+    logger: Logger,
+    promptBuilder?: PromptBuilder,
+    eventHandler?: (event: AgentEvent) => void,
+  ) {
     this.registry = registry;
     this.logger = logger.child('StageExecutor');
     this.eventTransformer = new EventTransformer();
@@ -24,6 +30,11 @@ export class StageExecutor {
       generatePlanTemplate: async () => '',
       logger,
     });
+    this.eventHandler = eventHandler;
+  }
+
+  setEventHandler(handler?: (event: AgentEvent) => void): void {
+    this.eventHandler = handler;
   }
 
   async execute(task: Task, stage: WorkflowStage, options: WorkflowExecutionOptions): Promise<WorkflowStageExecutionResult> {
@@ -85,8 +96,11 @@ export class StageExecutor {
     let plan = '';
     for await (const message of response) {
       const transformed = this.eventTransformer.transform(message);
-      if (transformed && transformed.type !== 'token') {
-        this.logger.debug('Planning event', { type: transformed.type });
+      if (transformed) {
+        if (transformed.type !== 'token') {
+          this.logger.debug('Planning event', { type: transformed.type });
+        }
+        this.eventHandler?.(transformed);
       }
       if (message.type === 'assistant' && message.message?.content) {
         for (const c of message.message.content) {
@@ -125,12 +139,14 @@ export class StageExecutor {
     const results: any[] = [];
     for await (const message of response) {
       const transformed = this.eventTransformer.transform(message);
-      if (transformed && transformed.type !== 'token') {
-        this.logger.debug('Execution event', { type: transformed.type });
+      if (transformed) {
+        if (transformed.type !== 'token') {
+          this.logger.debug('Execution event', { type: transformed.type });
+        }
+        this.eventHandler?.(transformed);
       }
       results.push(message);
     }
     return { results };
   }
 }
-

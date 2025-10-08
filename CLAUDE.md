@@ -114,16 +114,43 @@ const task = await agent.fetchTask("task_abc123");
 const result = await agent.runTask(task, ExecutionMode.PLAN_AND_BUILD);
 ```
 
-### Array App Integration
+### Progress Updates
 ```typescript
-// Fetch task from PostHog and run with selected mode
-const result = await agent.runTask(taskId, userSelectedMode, {
-    repositoryPath: selectedRepoPath,
-    permissionMode: PermissionMode.DEFAULT,
-    onEvent: (event) => updateUI(event)
-});
+const posthogClient = agent.getPostHogClient();
+const poller = setInterval(async () => {
+    const progress = await posthogClient?.getTaskProgress(taskId);
+    if (progress?.has_progress) {
+        updateUI(progress.status, progress.current_step, progress.completed_steps, progress.total_steps);
+    }
+}, 3000);
 
-// Plan is stored in .posthog/{taskId}/plan.md and committed to Git
+try {
+    await agent.runWorkflow(taskId, workflowId, {
+        repositoryPath: selectedRepoPath,
+        permissionMode: PermissionMode.DEFAULT,
+        autoProgress: true,
+    });
+} finally {
+    clearInterval(poller);
+}
+```
+
+> The agent still emits transformed events via the `onEvent` callback, so UI layers can combine streaming updates with periodic polling if desired.
+
+```typescript
+// Handle the hook provided when constructing the Agent
+import type { AgentEvent } from '@posthog/agent';
+
+private handleLiveEvent(event: AgentEvent) {
+    switch (event.type) {
+        case 'status':
+            this.updateUI(event.phase, event.stage);
+            break;
+        case 'error':
+            this.showError(event.message);
+            break;
+    }
+}
 ```
 
 ### Working with Task Files
@@ -212,10 +239,11 @@ await agent.writeTaskFile(task.id, "requirements.md",
     "context"
 );
 
-// 4. Execute with PLAN_AND_BUILD mode
-const result = await agent.runTask(task, ExecutionMode.PLAN_AND_BUILD, {
+// 4. Execute with PLAN_AND_BUILD mode and rely on PostHog polling for progress
+const result = await agent.runWorkflow(task.id, workflowId, {
+    repositoryPath: "/path/to/repo",
     permissionMode: PermissionMode.DEFAULT,
-    onEvent: (event) => console.log(event)
+    autoProgress: true,
 });
 
 // 5. Review results
@@ -227,31 +255,36 @@ console.log("Plan location:", `.posthog/${task.id}/plan.md`);
 ### Array App Integration Pattern
 
 ```typescript
-// How Array app uses the SDK
 class ArrayTaskExecution {
-    async executeTask(taskId: string, mode: ExecutionMode, repoPath: string) {
-        const result = await this.agent.runTask(taskId, mode, {
-            repositoryPath: repoPath,
-            permissionMode: PermissionMode.DEFAULT,
-            onEvent: (event) => this.updateUI(event)
-        });
-        
-        // Show branches created for user review
-        this.showBranchesForReview(taskId, mode);
-        return result;
+    async executeTask(taskId: string, workflowId: string, repoPath: string) {
+        const poller = setInterval(() => this.pollProgress(taskId), 3000);
+        try {
+            await this.agent.runWorkflow(taskId, workflowId, {
+                repositoryPath: repoPath,
+                permissionMode: PermissionMode.DEFAULT,
+                autoProgress: true,
+            });
+        } finally {
+            clearInterval(poller);
+        }
+
+        this.showBranchesForReview(taskId);
     }
-    
-    private updateUI(event: any) {
-        switch (event.type) {
-            case 'status':
-                this.updateProgressBar(event.data?.status);
-                break;
-            case 'file_write':
-                this.showFileChange(event.data);
-                break;
-            case 'done':
-                this.showCompletion();
-                break;
+
+    private async pollProgress(taskId: string) {
+        const client = this.agent.getPostHogClient();
+        if (!client) {
+            return;
+        }
+
+        const progress = await client.getTaskProgress(taskId);
+        if (progress.has_progress) {
+            this.updateProgressBar({
+                status: progress.status,
+                currentStep: progress.current_step,
+                completed: progress.completed_steps,
+                total: progress.total_steps,
+            });
         }
     }
 }

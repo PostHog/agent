@@ -14,6 +14,7 @@ import { AgentRegistry } from './agent-registry.js';
 import { WorkflowRegistry } from './workflow-registry.js';
 import { StageExecutor } from './stage-executor.js';
 import { PromptBuilder } from './prompt-builder.js';
+import { TaskProgressReporter } from './task-progress-reporter.js';
 
 export class Agent {
     private workingDirectory: string;
@@ -28,6 +29,7 @@ export class Agent {
     private agentRegistry: AgentRegistry;
     private workflowRegistry: WorkflowRegistry;
     private stageExecutor: StageExecutor;
+    private progressReporter: TaskProgressReporter;
     public debug: boolean;
 
     constructor(config: AgentConfig = {}) {
@@ -64,6 +66,8 @@ export class Agent {
             logger: this.logger.child('PromptBuilder')
         });
         this.stageExecutor = new StageExecutor(this.agentRegistry, this.logger, promptBuilder);
+        this.stageExecutor.setEventHandler((event) => this.emitEvent(event));
+        this.progressReporter = new TaskProgressReporter(this.posthogAPI, this.logger);
     }
 
     /**
@@ -82,6 +86,7 @@ export class Agent {
         if (!workflow) {
             throw new Error(`Workflow ${workflowId} not found`);
         }
+        const orderedStages = [...workflow.stages].sort((a, b) => a.position - b.position);
 
         // Ensure task is assigned to workflow and positioned at first stage
         if (this.posthogAPI) {
@@ -103,9 +108,13 @@ export class Agent {
         const executionId = this.taskManager.generateExecutionId();
         this.logger.info('Starting workflow execution', { taskId: task.id, workflowId, executionId });
         this.taskManager.startExecution(task.id, 'plan_and_build', executionId);
+        await this.progressReporter.start(task.id, {
+            workflowId,
+            workflowRunId: executionId,
+            totalSteps: orderedStages.length,
+        });
 
         try {
-            const orderedStages = [...workflow.stages].sort((a, b) => a.position - b.position);
             let startIndex = 0;
             const currentStageId = (task as any).current_stage as string | undefined;
 
@@ -114,7 +123,10 @@ export class Agent {
                 const currIdx = orderedStages.findIndex(s => s.id === currentStageId);
                 const atLastStage = currIdx >= 0 && currIdx === orderedStages.length - 1;
                 if (atLastStage) {
-                    this.emitEvent(this.eventTransformer.createStatusEvent('no_next_stage', { stage: orderedStages[currIdx].key }));
+                    const finalStageKey = orderedStages[currIdx]?.key;
+                    this.emitEvent(this.eventTransformer.createStatusEvent('no_next_stage', { stage: finalStageKey }));
+                    await this.progressReporter.noNextStage(finalStageKey);
+                    await this.progressReporter.complete();
                     this.taskManager.completeExecution(executionId, { task, workflow });
                     return { task, workflow };
                 }
@@ -135,7 +147,9 @@ export class Agent {
 
             for (let i = startIndex; i < orderedStages.length; i++) {
                 const stage = orderedStages[i];
+                await this.progressReporter.stageStarted(stage.key, i);
                 await this.executeStage(task, stage, options);
+                await this.progressReporter.stageCompleted(stage.key, i + 1);
                 if (options.autoProgress) {
                     const hasNext = i < orderedStages.length - 1;
                     if (hasNext) {
@@ -143,9 +157,11 @@ export class Agent {
                     }
                 }
             }
+            await this.progressReporter.complete();
             this.taskManager.completeExecution(executionId, { task, workflow });
             return { task, workflow };
         } catch (error) {
+            await this.progressReporter.fail(error as Error);
             this.taskManager.failExecution(executionId, error as Error);
             throw error;
         }
@@ -167,10 +183,12 @@ export class Agent {
             const planningBranch = await this.createPlanningBranch(task.id);
             await this.updateTaskBranch(task.id, planningBranch);
             this.emitEvent(this.eventTransformer.createStatusEvent('branch_created', { stage: stage.key, branch: planningBranch }));
+            await this.progressReporter.branchCreated(stage.key, planningBranch);
         } else if (!isPlanning && !isManual && shouldCreateImplBranch) {
             const implBranch = await this.createImplementationBranch(task.id);
             await this.updateTaskBranch(task.id, implBranch);
             this.emitEvent(this.eventTransformer.createStatusEvent('branch_created', { stage: stage.key, branch: implBranch }));
+            await this.progressReporter.branchCreated(stage.key, implBranch);
         }
 
         const result = await this.stageExecutor.execute(task, stage, options);
@@ -179,6 +197,7 @@ export class Agent {
             await this.writePlan(task.id, result.plan);
             await this.commitPlan(task.id, task.title);
             this.emitEvent(this.eventTransformer.createStatusEvent('commit_made', { stage: stage.key, kind: 'plan' }));
+            await this.progressReporter.commitMade(stage.key, 'plan');
         }
 
         if (isManual) {
@@ -193,12 +212,14 @@ export class Agent {
                     await this.updateTaskBranch(task.id, implBranch);
                     branchName = implBranch;
                     this.emitEvent(this.eventTransformer.createStatusEvent('branch_created', { stage: stage.key, branch: implBranch }));
+                    await this.progressReporter.branchCreated(stage.key, implBranch);
                 }
                 try {
                     const prUrl = await this.createPullRequest(task.id, branchName, task.title, task.description);
                     await this.updateTaskBranch(task.id, branchName);
-                    await this.attachPullRequestToTask(task.id, prUrl);
+                    await this.attachPullRequestToTask(task.id, prUrl, branchName);
                     this.emitEvent(this.eventTransformer.createStatusEvent('pr_created', { stage: stage.key, prUrl }));
+                    await this.progressReporter.pullRequestCreated(stage.key, prUrl);
                 } catch {}
             }
             // Do not auto-progress on manual stages
@@ -211,6 +232,7 @@ export class Agent {
             const planSummary = existingPlan ? existingPlan.split('\n')[0] : undefined;
             await this.commitImplementation(task.id, task.title, planSummary);
             this.emitEvent(this.eventTransformer.createStatusEvent('commit_made', { stage: stage.key, kind: 'implementation' }));
+            await this.progressReporter.commitMade(stage.key, 'implementation');
         }
 
         // PR creation on complete stage (or if explicitly requested), regardless of whether edits occurred
@@ -222,8 +244,9 @@ export class Agent {
                 try {
                     const prUrl = await this.createPullRequest(task.id, branchName, task.title, task.description);
                     await this.updateTaskBranch(task.id, branchName);
-                    await this.attachPullRequestToTask(task.id, prUrl);
+                    await this.attachPullRequestToTask(task.id, prUrl, branchName);
                     this.emitEvent(this.eventTransformer.createStatusEvent('pr_created', { stage: stage.key, prUrl }));
+                    await this.progressReporter.pullRequestCreated(stage.key, prUrl);
                 } catch {}
             }
         }
@@ -270,6 +293,10 @@ export class Agent {
             throw error;
         }
         return this.posthogAPI.fetchTask(taskId);
+    }
+
+    getPostHogClient(): PostHogAPIClient | undefined {
+        return this.posthogAPI;
     }
     
     async listTasks(filters?: {
@@ -367,8 +394,8 @@ Generated by PostHog Agent`;
         return prUrl;
     }
 
-    async attachPullRequestToTask(taskId: string, prUrl: string): Promise<void> {
-        this.logger.info('Attaching PR to task', { taskId, prUrl });
+    async attachPullRequestToTask(taskId: string, prUrl: string, branchName?: string): Promise<void> {
+        this.logger.info('Attaching PR to task', { taskId, prUrl, branchName });
 
         if (!this.posthogAPI) {
             const error = new Error('PostHog API not configured. Cannot attach PR to task.');
@@ -376,7 +403,7 @@ Generated by PostHog Agent`;
             throw error;
         }
 
-        await this.posthogAPI.updateTask(taskId, { github_pr_url: prUrl });
+        await this.posthogAPI.attachTaskPullRequest(taskId, prUrl, branchName);
         this.logger.debug('PR attached to task', { taskId, prUrl });
     }
 
@@ -389,7 +416,7 @@ Generated by PostHog Agent`;
             throw error;
         }
 
-        await this.posthogAPI.updateTask(taskId, { github_branch: branchName });
+        await this.posthogAPI.setTaskBranch(taskId, branchName);
         this.logger.debug('Task branch updated', { taskId, branchName });
     }
 
@@ -418,6 +445,12 @@ Generated by PostHog Agent`;
         if (this.debug && event.type !== 'token') {
             // Log all events except tokens (too verbose)
             this.logger.debug('Emitting event', { type: event.type, ts: event.ts });
+        }
+        const persistPromise = this.progressReporter.recordEvent(event);
+        if (persistPromise && typeof persistPromise.then === 'function') {
+            persistPromise.catch((error: Error) =>
+                this.logger.debug('Failed to persist agent event', { message: error.message })
+            );
         }
         this.onEvent?.(event);
     }

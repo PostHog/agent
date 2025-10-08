@@ -26,6 +26,36 @@ interface TaskProgressResponse {
   message?: string;
 }
 
+export interface TaskProgressRecord {
+  id: string;
+  task: string;
+  status: "started" | "in_progress" | "completed" | "failed";
+  current_step?: string | null;
+  completed_steps?: number | null;
+  total_steps?: number | null;
+  progress_percentage?: number | null;
+  output_log?: string | null;
+  error_message?: string | null;
+  workflow_id?: string | null;
+  workflow_run_id?: string | null;
+  activity_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string | null;
+}
+
+export interface TaskProgressUpdate {
+  status?: TaskProgressRecord["status"];
+  current_step?: string | null;
+  completed_steps?: number | null;
+  total_steps?: number | null;
+  output_log?: string | null;
+  error_message?: string | null;
+  workflow_id?: string | null;
+  workflow_run_id?: string | null;
+  activity_id?: string | null;
+}
+
 export class PostHogAPIClient {
   private config: PostHogAPIConfig;
   private _teamId: number | null = null;
@@ -137,9 +167,58 @@ export class PostHogAPIClient {
     });
   }
 
+  async setTaskBranch(taskId: string, branch: string): Promise<Task> {
+    const teamId = await this.getTeamId();
+    return this.apiRequest<Task>(`/api/projects/${teamId}/tasks/${taskId}/set_branch/`, {
+      method: "POST",
+      body: JSON.stringify({ branch }),
+    });
+  }
+
+  async attachTaskPullRequest(taskId: string, prUrl: string, branch?: string): Promise<Task> {
+    const teamId = await this.getTeamId();
+    const payload: Record<string, string> = { pr_url: prUrl };
+    if (branch) {
+      payload.branch = branch;
+    }
+    return this.apiRequest<Task>(`/api/projects/${teamId}/tasks/${taskId}/attach_pr/`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
   async getTaskProgress(taskId: string): Promise<TaskProgressResponse> {
     const teamId = await this.getTeamId();
     return this.apiRequest<TaskProgressResponse>(`/api/projects/${teamId}/tasks/${taskId}/progress/`);
+  }
+
+  async createTaskProgress(
+    taskId: string,
+    payload: TaskProgressUpdate & { status: TaskProgressRecord["status"] }
+  ): Promise<TaskProgressRecord> {
+    const teamId = await this.getTeamId();
+    return this.apiRequest<TaskProgressRecord>(`/api/projects/${teamId}/task_progress/`, {
+      method: "POST",
+      body: JSON.stringify({
+        ...payload,
+        task: taskId,
+      }),
+    });
+  }
+
+  async updateTaskProgress(
+    taskId: string,
+    progressId: string,
+    payload: TaskProgressUpdate
+  ): Promise<TaskProgressRecord> {
+    const teamId = await this.getTeamId();
+    return this.apiRequest<TaskProgressRecord>(`/api/projects/${teamId}/task_progress/${progressId}/`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        ...payload,
+        task: taskId,
+      }),
+    });
   }
 
   // Workflow endpoints

@@ -15,17 +15,24 @@ bun run example
 - **PostHog Integration**: Fetches existing tasks from PostHog API
 - **Configurable Workflows**: Execute tasks via PostHog-defined or local workflows
 - **Branch Management**: Automatic branch creation for planning and implementation
-- **Event Streaming**: Real-time events for UI integration
+- **Progress Tracking**: Execution status stored in PostHog `TaskProgress` records for easy polling
 
 ## Usage
 
 ```typescript
 import { Agent, PermissionMode } from '@posthog/agent';
+import type { AgentEvent } from '@posthog/agent';
 
 const agent = new Agent({
     workingDirectory: "/path/to/repo",
     posthogApiUrl: "https://app.posthog.com",
-    posthogApiKey: process.env.POSTHOG_API_KEY
+    posthogApiKey: process.env.POSTHOG_API_KEY,
+    onEvent: (event) => {
+      // Streamed updates for responsive UIs
+      if (event.type !== 'token') {
+        handleLiveEvent(event);
+      }
+    },
 });
 
 // Run by workflow
@@ -78,21 +85,46 @@ your-repo/
 └── (your code)
 ```
 
-## Array App Integration
+## Progress Updates
+
+Progress for each task execution is persisted to PostHog's `TaskProgress` model, so UIs can poll for updates without relying on streaming hooks:
 
 ```typescript
-const result = await agent.runTask(taskId, userSelectedMode, {
-    repositoryPath: selectedRepo,
-    onEvent: (event) => {
-        // Update UI based on event type
-        switch (event.type) {
-            case 'status': updateProgress(event.data); break;
-            case 'file_write': showFileChange(event.data); break;
-            case 'done': showCompletion(); break;
-        }
-    }
+const agent = new Agent({
+  workingDirectory: repoPath,
+  posthogApiUrl: "https://app.posthog.com",
+  posthogApiKey: process.env.POSTHOG_KEY,
 });
+
+const poller = setInterval(async () => {
+  const progress = await agent.getPostHogClient()?.getTaskProgress(taskId);
+  if (progress?.has_progress) {
+    renderProgress(progress.status, progress.current_step, progress.completed_steps, progress.total_steps);
+  }
+}, 3000);
+
+try {
+  await agent.runWorkflow(taskId, workflowId, { repositoryPath: repoPath });
+} finally {
+  clearInterval(poller);
+}
+
+// Live stream still available through the onEvent hook
+function handleLiveEvent(event: AgentEvent) {
+  switch (event.type) {
+    case 'status':
+      // optimistic UI update
+      break;
+    case 'error':
+      notifyError(event.message);
+      break;
+    default:
+      break;
+  }
+}
 ```
+
+> Prefer streaming updates? Pass an `onEvent` handler when constructing the agent to keep receiving real-time events while progress is also written to PostHog.
 
 ## Requirements
 

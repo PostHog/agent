@@ -118,15 +118,14 @@ export class EventTransformer {
 
     // Handle user messages
     if (sdkMessage.type === 'user') {
-      const content = sdkMessage.message.content;
-      const textContent = Array.isArray(content)
-        ? content.find(c => c.type === 'text')?.text
-        : typeof content === 'string' ? content : '';
-
+      const textContent = this.extractUserContent(sdkMessage.message?.content);
+      if (!textContent) {
+        return null;
+      }
       return {
         ...baseEvent,
         type: 'user_message',
-        content: textContent || '',
+        content: textContent,
         isSynthetic: sdkMessage.isSynthetic
       };
     }
@@ -185,5 +184,60 @@ export class EventTransformer {
       phase,
       ...additionalData
     };
+  }
+
+  private extractUserContent(content: unknown): string | null {
+    if (!content) {
+      return null;
+    }
+
+    if (typeof content === 'string') {
+      const trimmed = content.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+
+    if (Array.isArray(content)) {
+      const parts: string[] = [];
+      for (const block of content) {
+        const extracted = this.extractUserContent(block);
+        if (extracted) {
+          parts.push(extracted);
+        } else if (block && typeof block === 'object') {
+          const candidate = this.extractFromObject(block as Record<string, unknown>);
+          if (candidate) {
+            parts.push(candidate);
+          }
+        }
+      }
+      const text = parts.join('\n').trim();
+      return text.length > 0 ? text : null;
+    }
+
+    if (typeof content === 'object') {
+      return this.extractFromObject(content as Record<string, unknown>);
+    }
+
+    return null;
+  }
+
+  private extractFromObject(value: Record<string, unknown>): string | null {
+    const preferredKeys = ['text', 'input_text', 'input', 'markdown', 'content', 'message'];
+    for (const key of preferredKeys) {
+      if (typeof value[key] === 'string') {
+        const trimmed = (value[key] as string).trim();
+        if (trimmed.length > 0) {
+          return trimmed;
+        }
+      }
+    }
+
+    for (const entry of Object.values(value)) {
+      const extracted = this.extractUserContent(entry);
+      if (extracted) {
+        return extracted;
+      }
+    }
+
+    return null;
   }
 }
