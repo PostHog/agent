@@ -2,12 +2,11 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { Logger } from './utils/logger.js';
 import { EventTransformer } from './event-transformer.js';
 import { AgentRegistry } from './agent-registry.js';
-import type { AgentEvent, Task } from './types.js';
+import type { AgentEvent, Task, McpServerConfig } from './types.js';
 import type { WorkflowStage, WorkflowStageExecutionResult, WorkflowExecutionOptions } from './workflow-types.js';
 import { PLANNING_SYSTEM_PROMPT } from './agents/planning.js';
 import { EXECUTION_SYSTEM_PROMPT } from './agents/execution.js';
 import { PromptBuilder } from './prompt-builder.js';
-import { POSTHOG_MCP } from './utils/mcp.js';
 
 export class StageExecutor {
   private registry: AgentRegistry;
@@ -15,12 +14,14 @@ export class StageExecutor {
   private eventTransformer: EventTransformer;
   private promptBuilder: PromptBuilder;
   private eventHandler?: (event: AgentEvent) => void;
+  private mcpServers?: Record<string, McpServerConfig>;
 
   constructor(
     registry: AgentRegistry,
     logger: Logger,
     promptBuilder?: PromptBuilder,
     eventHandler?: (event: AgentEvent) => void,
+    mcpServers?: Record<string, McpServerConfig>,
   ) {
     this.registry = registry;
     this.logger = logger.child('StageExecutor');
@@ -31,6 +32,7 @@ export class StageExecutor {
       logger,
     });
     this.eventHandler = eventHandler;
+    this.mcpServers = mcpServers;
   }
 
   setEventHandler(handler?: (event: AgentEvent) => void): void {
@@ -83,9 +85,7 @@ export class StageExecutor {
       cwd,
       permissionMode: 'plan',
       settingSources: ['local'],
-      mcpServers: {
-        ...POSTHOG_MCP
-      }
+      mcpServers: this.mcpServers
     };
 
     const response = query({
@@ -127,9 +127,7 @@ export class StageExecutor {
       cwd,
       permissionMode,
       settingSources: ['local'],
-      mcpServers: {
-        ...POSTHOG_MCP
-      }
+      mcpServers: this.mcpServers
     };
 
     const response = query({

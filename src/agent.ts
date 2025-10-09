@@ -91,7 +91,13 @@ export class Agent {
             generatePlanTemplate: (vars) => this.templateManager.generatePlan(vars),
             logger: this.logger.child('PromptBuilder')
         });
-        this.stageExecutor = new StageExecutor(this.agentRegistry, this.logger, promptBuilder);
+        this.stageExecutor = new StageExecutor(
+            this.agentRegistry,
+            this.logger,
+            promptBuilder,
+            undefined, // eventHandler set via setEventHandler below
+            this.mcpServers
+        );
         this.stageExecutor.setEventHandler((event) => this.emitEvent(event));
         this.progressReporter = new TaskProgressReporter(this.posthogAPI, this.logger);
     }
