@@ -30,12 +30,38 @@ export class Agent {
     private workflowRegistry: WorkflowRegistry;
     private stageExecutor: StageExecutor;
     private progressReporter: TaskProgressReporter;
+    private mcpServers?: Record<string, any>;
     public debug: boolean;
 
     constructor(config: AgentConfig = {}) {
         this.workingDirectory = config.workingDirectory || process.cwd();
         this.onEvent = config.onEvent;
         this.debug = config.debug || false;
+
+        // Build default PostHog MCP server configuration
+        const posthogMcpUrl = config.posthogMcpUrl
+            || process.env.POSTHOG_MCP_URL
+            || 'https://mcp.posthog.com/mcp';
+
+        // Add auth if API key provided
+        const headers: Record<string, string> = {};
+        if (config.posthogApiKey) {
+            headers['Authorization'] = `Bearer ${config.posthogApiKey}`;
+        }
+
+        const defaultMcpServers = {
+            posthog: {
+                type: 'http' as const,
+                url: posthogMcpUrl,
+                ...(Object.keys(headers).length > 0 ? { headers } : {}),
+            }
+        };
+
+        // Merge default PostHog MCP with user-provided servers (user config takes precedence)
+        this.mcpServers = {
+            ...defaultMcpServers,
+            ...config.mcpServers
+        };
         this.logger = new Logger({ debug: this.debug, prefix: '[PostHog Agent]' });
         this.taskManager = new TaskManager();
         this.eventTransformer = new EventTransformer();
@@ -65,7 +91,13 @@ export class Agent {
             generatePlanTemplate: (vars) => this.templateManager.generatePlan(vars),
             logger: this.logger.child('PromptBuilder')
         });
-        this.stageExecutor = new StageExecutor(this.agentRegistry, this.logger, promptBuilder);
+        this.stageExecutor = new StageExecutor(
+            this.agentRegistry,
+            this.logger,
+            promptBuilder,
+            undefined, // eventHandler set via setEventHandler below
+            this.mcpServers
+        );
         this.stageExecutor.setEventHandler((event) => this.emitEvent(event));
         this.progressReporter = new TaskProgressReporter(this.posthogAPI, this.logger);
     }
@@ -262,10 +294,11 @@ export class Agent {
     // Direct prompt execution - still supported for low-level usage
     async run(prompt: string, options: { repositoryPath?: string; permissionMode?: import('./types.js').PermissionMode; queryOverrides?: Record<string, any> } = {}): Promise<ExecutionResult> {
         const baseOptions: Record<string, any> = {
-            model: "claude-4-5-sonnet",
+            model: "claude-sonnet-4-5-20250929",
             cwd: options.repositoryPath || this.workingDirectory,
             permissionMode: (options.permissionMode as any) || "default",
             settingSources: ["local"],
+            mcpServers: this.mcpServers,
         };
 
         const response = query({
@@ -275,7 +308,7 @@ export class Agent {
 
         const results = [];
         for await (const message of response) {
-            this.logger.debug('Received message in direct run', { type: message.type });
+            this.logger.debug('Received message in direct run', message);
             const transformedEvent = this.eventTransformer.transform(message);
             this.onEvent?.(transformedEvent);
             results.push(message);

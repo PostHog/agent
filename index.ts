@@ -11,7 +11,8 @@ export type {
     Task,
     SupportingFile,
     ExecutionResult,
-    AgentConfig
+    AgentConfig,
+    McpServerConfig
 } from './src/types.js';
 
 export type {
