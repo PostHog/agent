@@ -1,5 +1,11 @@
 # @posthog/agent
 
+## 1.3.0
+
+### Minor Changes
+
+- use new MCP by default and pass it through everywhere
+
 ## 1.2.0
 
 ### Minor Changes
