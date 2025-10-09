@@ -205,14 +205,42 @@ export interface TaskExecutionResult {
   // Deprecated: mode removed in workflow-based execution
 }
 
+// MCP Server configuration types (re-exported from Claude SDK for convenience)
+export type McpServerConfig = {
+  type?: 'stdio';
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+} | {
+  type: 'sse';
+  url: string;
+  headers?: Record<string, string>;
+} | {
+  type: 'http';
+  url: string;
+  headers?: Record<string, string>;
+} | {
+  type: 'sdk';
+  name: string;
+  instance?: any; // McpServer instance
+};
+
 export interface AgentConfig {
   workingDirectory?: string;
   onEvent?: (event: AgentEvent) => void;
-  
+
   // PostHog API configuration
   posthogApiUrl?: string;
   posthogApiKey?: string;
-  
+
+  posthogMcpUrl?: string;
+  posthogMcpApiKey?: string;
+
+  // MCP Server configuration
+  // Additional MCP servers (PostHog MCP is always included by default)
+  // You can override the PostHog MCP config by providing mcpServers.posthog
+  mcpServers?: Record<string, McpServerConfig>;
+
   // Logging configuration
   debug?: boolean;
 }

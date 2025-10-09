@@ -44,6 +44,14 @@ await agent.runWorkflow(taskId, workflowId, {
   autoProgress: true,
 });
 ```
+For local MCP development:
+
+```typescript
+const agent = new Agent({
+  workingDirectory: "/path/to/repo",
+  posthogMcpUrl: 'http://localhost:8787/mcp',
+});
+```
 
 ## Workflow
 
