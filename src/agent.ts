@@ -43,13 +43,10 @@ export class Agent {
             || process.env.POSTHOG_MCP_URL
             || 'https://mcp.posthog.com/mcp';
 
-        // API key priority: config.posthogMcpApiKey > POSTHOG_PERSONAL_API_KEY env var
-        const posthogMcpApiKey = config.posthogMcpApiKey || process.env.POSTHOG_PERSONAL_API_KEY;
-
-        // add auth if API key provided
+        // Add auth if API key provided
         const headers: Record<string, string> = {};
-        if (posthogMcpApiKey) {
-            headers['Authorization'] = `Bearer ${posthogMcpApiKey}`;
+        if (config.posthogApiKey) {
+            headers['Authorization'] = `Bearer ${config.posthogApiKey}`;
         }
 
         const defaultMcpServers = {

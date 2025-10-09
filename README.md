@@ -26,7 +26,7 @@ import type { AgentEvent } from '@posthog/agent';
 const agent = new Agent({
     workingDirectory: "/path/to/repo",
     posthogApiUrl: "https://app.posthog.com",
-    posthogApiKey: process.env.POSTHOG_API_KEY,
+    posthogApiKey: process.env.POSTHOG_API_KEY, // Used for both API and MCP
     onEvent: (event) => {
       // Streamed updates for responsive UIs
       if (event.type !== 'token') {
@@ -44,6 +44,7 @@ await agent.runWorkflow(taskId, workflowId, {
   autoProgress: true,
 });
 ```
+
 For local MCP development:
 
 ```typescript

@@ -233,8 +233,8 @@ export interface AgentConfig {
   posthogApiUrl?: string;
   posthogApiKey?: string;
 
+  // PostHog MCP configuration
   posthogMcpUrl?: string;
-  posthogMcpApiKey?: string;
 
   // MCP Server configuration
   // Additional MCP servers (PostHog MCP is always included by default)
