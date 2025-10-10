@@ -224,12 +224,12 @@ export class PostHogAPIClient {
   // Workflow endpoints
   async fetchWorkflow(workflowId: string): Promise<WorkflowDefinition> {
     const teamId = await this.getTeamId();
-    return this.apiRequest<WorkflowDefinition>(`/api/projects/${teamId}/task_workflows/${workflowId}/`);
+    return this.apiRequest<WorkflowDefinition>(`/api/projects/${teamId}/workflows/${workflowId}/`);
   }
 
   async listWorkflows(): Promise<WorkflowDefinition[]> {
     const teamId = await this.getTeamId();
-    const response = await this.apiRequest<PostHogApiResponse<WorkflowDefinition>>(`/api/projects/${teamId}/task_workflows/`);
+    const response = await this.apiRequest<PostHogApiResponse<WorkflowDefinition>>(`/api/projects/${teamId}/workflows/`);
     return response.results || [];
   }
 

@@ -14,8 +14,8 @@ export class AgentRegistry {
   static getDefaultAgents(): AgentDefinition[] {
     return [
       {
-        id: 'planning_basic',
-        name: 'planning_basic',
+        id: 'planning',
+        name: 'planning',
         agent_type: 'planning',
         description: 'Analyze repo and produce implementation plan',
       },
@@ -26,14 +26,14 @@ export class AgentRegistry {
         description: 'Implements code changes using Claude SDK',
       },
       {
-        id: 'review_basic',
-        name: 'review_basic',
+        id: 'review',
+        name: 'review',
         agent_type: 'review',
         description: 'Reviews changes and suggests fixes',
       },
       {
-        id: 'testing_basic',
-        name: 'testing_basic',
+        id: 'testing',
+        name: 'testing',
         agent_type: 'testing',
         description: 'Runs tests and reports results',
       },

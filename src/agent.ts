@@ -185,7 +185,7 @@ export class Agent {
                 if (options.autoProgress) {
                     const hasNext = i < orderedStages.length - 1;
                     if (hasNext) {
-                        await this.progressToNextStage(task.id);
+                        await this.progressToNextStage(task.id, stage.key);
                     }
                 }
             }
@@ -286,9 +286,23 @@ export class Agent {
         this.emitEvent(this.eventTransformer.createStatusEvent('stage_complete', { stage: stage.key }));
     }
 
-    async progressToNextStage(taskId: string): Promise<void> {
+    async progressToNextStage(taskId: string, currentStageKey?: string): Promise<void> {
         if (!this.posthogAPI) throw new Error('PostHog API not configured. Cannot progress stage.');
-        await this.posthogAPI.progressTask(taskId, { auto: true });
+        try {
+            await this.posthogAPI.progressTask(taskId, { auto: true });
+        } catch (error) {
+            if (error instanceof Error && error.message.includes('No next stage available')) {
+                this.logger.warn('No next stage available when attempting to progress task', {
+                    taskId,
+                    stage: currentStageKey,
+                    error: error.message,
+                });
+                this.emitEvent(this.eventTransformer.createStatusEvent('no_next_stage', { stage: currentStageKey }));
+                await this.progressReporter.noNextStage(currentStageKey);
+                return;
+            }
+            throw error;
+        }
     }
 
     // Direct prompt execution - still supported for low-level usage
