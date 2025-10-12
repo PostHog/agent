@@ -2,6 +2,14 @@ import type { AgentEvent } from './types.js';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 export class EventTransformer {
+  createRawSDKEvent(sdkMessage: any): AgentEvent {
+    return {
+      type: 'raw_sdk_event',
+      ts: Date.now(),
+      sdkMessage
+    };
+  }
+
   transform(sdkMessage: SDKMessage): AgentEvent | null {
     const baseEvent = { ts: Date.now() };
 
@@ -93,7 +101,12 @@ export class EventTransformer {
             type: 'error',
             message: event.error?.message || 'Unknown error',
             error: event.error,
-            errorType: event.error?.type
+            errorType: event.error?.type || 'stream_error',
+            context: event.error ? {
+              type: event.error.type,
+              code: event.error.code,
+            } : undefined,
+            sdkError: event.error
           };
 
         default:
@@ -103,10 +116,25 @@ export class EventTransformer {
 
     // Handle assistant messages (full message, not streaming)
     if (sdkMessage.type === 'assistant') {
-      // Extract tool calls from assistant message
       const message = sdkMessage.message;
-      // We could emit individual tool_call events here if needed
-      // For now, just emit a status event
+      
+      // Extract tool calls from content blocks
+      if (message.content && Array.isArray(message.content)) {
+        for (const block of message.content) {
+          if (block.type === 'tool_use') {
+            // Return first tool_call event found
+            return {
+              ...baseEvent,
+              type: 'tool_call',
+              toolName: block.name,
+              callId: block.id,
+              args: block.input || {}
+            };
+          }
+        }
+      }
+      
+      // If no tool calls, emit status event
       return {
         ...baseEvent,
         type: 'status',
@@ -118,7 +146,25 @@ export class EventTransformer {
 
     // Handle user messages
     if (sdkMessage.type === 'user') {
-      const textContent = this.extractUserContent(sdkMessage.message?.content);
+      const message = sdkMessage.message;
+      
+      // Check for tool results in content blocks
+      if (message?.content && Array.isArray(message.content)) {
+        for (const block of message.content) {
+          if (block.type === 'tool_result') {
+            return {
+              ...baseEvent,
+              type: 'tool_result',
+              toolName: block.tool_name || 'unknown',
+              callId: block.tool_use_id || '',
+              result: block.content
+            };
+          }
+        }
+      }
+      
+      // Otherwise extract text content
+      const textContent = this.extractUserContent(message?.content);
       if (!textContent) {
         return null;
       }
@@ -147,7 +193,13 @@ export class EventTransformer {
           type: 'error',
           message: `Execution failed: ${sdkMessage.subtype}`,
           error: { subtype: sdkMessage.subtype },
-          errorType: sdkMessage.subtype
+          errorType: sdkMessage.subtype || 'result_error',
+          context: {
+            subtype: sdkMessage.subtype,
+            duration_ms: sdkMessage.duration_ms,
+            num_turns: sdkMessage.num_turns
+          },
+          sdkError: sdkMessage
         };
       }
     }

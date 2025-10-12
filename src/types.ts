@@ -141,6 +141,8 @@ export interface ErrorEvent extends BaseEvent {
   message: string;
   error?: any;
   errorType?: string;
+  context?: Record<string, any>; // Partial error context for debugging
+  sdkError?: any; // Original SDK error object
 }
 
 // Legacy events (keeping for backwards compatibility)
@@ -170,6 +172,11 @@ export interface ArtifactEvent extends BaseEvent {
   content: any;
 }
 
+export interface RawSDKEvent extends BaseEvent {
+  type: 'raw_sdk_event';
+  sdkMessage: any; // Full SDK message for debugging
+}
+
 export type AgentEvent =
   | TokenEvent
   | ContentBlockStartEvent
@@ -188,7 +195,8 @@ export type AgentEvent =
   | DiffEvent
   | FileWriteEvent
   | MetricEvent
-  | ArtifactEvent;
+  | ArtifactEvent
+  | RawSDKEvent;
 
 export interface ExecutionResult {
   results: any[];

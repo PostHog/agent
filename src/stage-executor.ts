@@ -95,6 +95,10 @@ export class StageExecutor {
 
     let plan = '';
     for await (const message of response) {
+      // Emit raw SDK event first
+      this.eventHandler?.(this.eventTransformer.createRawSDKEvent(message));
+      
+      // Then emit transformed event
       const transformed = this.eventTransformer.transform(message);
       if (transformed) {
         if (transformed.type !== 'token') {
@@ -102,6 +106,7 @@ export class StageExecutor {
         }
         this.eventHandler?.(transformed);
       }
+      
       if (message.type === 'assistant' && message.message?.content) {
         for (const c of message.message.content) {
           if (c.type === 'text' && c.text) plan += c.text + '\n';
@@ -136,6 +141,10 @@ export class StageExecutor {
     });
     const results: any[] = [];
     for await (const message of response) {
+      // Emit raw SDK event first
+      this.eventHandler?.(this.eventTransformer.createRawSDKEvent(message));
+      
+      // Then emit transformed event
       const transformed = this.eventTransformer.transform(message);
       if (transformed) {
         if (transformed.type !== 'token') {
@@ -143,6 +152,7 @@ export class StageExecutor {
         }
         this.eventHandler?.(transformed);
       }
+      
       results.push(message);
     }
     return { results };
