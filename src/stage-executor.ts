@@ -71,7 +71,7 @@ export class StageExecutor {
   }
 
   private async runPlanning(task: Task, cwd: string, options: WorkflowExecutionOptions, stageKey: string): Promise<WorkflowStageExecutionResult> {
-    const contextPrompt = await this.promptBuilder.buildPlanningPrompt(task);
+    const contextPrompt = await this.promptBuilder.buildPlanningPrompt(task, cwd);
     let prompt = PLANNING_SYSTEM_PROMPT + '\n\n' + contextPrompt;
 
     const stageOverrides = options.stageOverrides?.[stageKey] || options.stageOverrides?.['plan'];
@@ -118,7 +118,7 @@ export class StageExecutor {
   }
 
   private async runExecution(task: Task, cwd: string, permissionMode: WorkflowExecutionOptions['permissionMode'], options: WorkflowExecutionOptions, stageKey: string): Promise<WorkflowStageExecutionResult> {
-    const contextPrompt = await this.promptBuilder.buildExecutionPrompt(task);
+    const contextPrompt = await this.promptBuilder.buildExecutionPrompt(task, cwd);
     let prompt = EXECUTION_SYSTEM_PROMPT + '\n\n' + contextPrompt;
 
     const stageOverrides = options.stageOverrides?.[stageKey];
