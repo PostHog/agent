@@ -110,8 +110,36 @@ export class Agent {
         this.logger.setDebug(enabled);
     }
 
+    /**
+     * Configure LLM gateway environment variables for Claude Code CLI
+     */
+    private async _configureLlmGateway(): Promise<void> {
+        if (!this.posthogAPI) {
+            return;
+        }
+
+        if (process.env.ANTHROPIC_BASE_URL && process.env.ANTHROPIC_AUTH_TOKEN) {
+            return;
+        }
+
+        try {
+            const gatewayUrl = await this.posthogAPI.getLlmGatewayUrl();
+            const apiKey = this.posthogAPI.getApiKey();
+
+            process.env.ANTHROPIC_BASE_URL = gatewayUrl;
+            process.env.ANTHROPIC_AUTH_TOKEN = apiKey;
+
+            this.logger.debug('Configured LLM gateway', { gatewayUrl });
+        } catch (error) {
+            this.logger.error('Failed to configure LLM gateway', error);
+            throw error;
+        }
+    }
+
     // Workflow-based execution
     async runWorkflow(taskOrId: Task | string, workflowId: string, options: WorkflowExecutionOptions = {}): Promise<{ task: Task; workflow: WorkflowDefinition }> {
+        await this._configureLlmGateway();
+
         const task = typeof taskOrId === 'string' ? await this.fetchTask(taskOrId) : taskOrId;
         await this.workflowRegistry.loadWorkflows();
         const workflow = this.workflowRegistry.getWorkflow(workflowId);
@@ -307,6 +335,7 @@ export class Agent {
 
     // Direct prompt execution - still supported for low-level usage
     async run(prompt: string, options: { repositoryPath?: string; permissionMode?: import('./types.js').PermissionMode; queryOverrides?: Record<string, any> } = {}): Promise<ExecutionResult> {
+        await this._configureLlmGateway();
         const baseOptions: Record<string, any> = {
             model: "claude-sonnet-4-5-20250929",
             cwd: options.repositoryPath || this.workingDirectory,
