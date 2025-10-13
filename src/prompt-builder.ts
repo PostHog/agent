@@ -1,6 +1,8 @@
 import type { Task } from './types.js';
 import type { TemplateVariables } from './template-manager.js';
 import { Logger } from './utils/logger.js';
+import { promises as fs } from 'fs';
+import { join } from 'path';
 
 export interface PromptBuilderDeps {
   getTaskFiles: (taskId: string) => Promise<any[]>;
@@ -19,12 +21,92 @@ export class PromptBuilder {
     this.logger = deps.logger || new Logger({ debug: false, prefix: '[PromptBuilder]' });
   }
 
-  async buildPlanningPrompt(task: Task): Promise<string> {
+  /**
+   * Extract file paths from XML tags in description
+   * Format: <file path="relative/path.ts" />
+   */
+  private extractFilePaths(description: string): string[] {
+    const fileTagRegex = /<file\s+path="([^"]+)"\s*\/>/g;
+    const paths: string[] = [];
+    let match: RegExpExecArray | null;
+
+    while ((match = fileTagRegex.exec(description)) !== null) {
+      paths.push(match[1]);
+    }
+
+    return paths;
+  }
+
+  /**
+   * Read file contents from repository
+   */
+  private async readFileContent(repositoryPath: string, filePath: string): Promise<string | null> {
+    try {
+      const fullPath = join(repositoryPath, filePath);
+      const content = await fs.readFile(fullPath, 'utf8');
+      return content;
+    } catch (error) {
+      this.logger.warn(`Failed to read referenced file: ${filePath}`, { error });
+      return null;
+    }
+  }
+
+  /**
+   * Process description to extract file tags and read contents
+   * Returns processed description and referenced file contents
+   */
+  private async processFileReferences(
+    description: string,
+    repositoryPath?: string
+  ): Promise<{ description: string; referencedFiles: Array<{ path: string; content: string }> }> {
+    const filePaths = this.extractFilePaths(description);
+    const referencedFiles: Array<{ path: string; content: string }> = [];
+
+    if (filePaths.length === 0 || !repositoryPath) {
+      return { description, referencedFiles };
+    }
+
+    // Read all referenced files
+    for (const filePath of filePaths) {
+      const content = await this.readFileContent(repositoryPath, filePath);
+      if (content !== null) {
+        referencedFiles.push({ path: filePath, content });
+      }
+    }
+
+    // Replace file tags with just the filename for readability
+    let processedDescription = description;
+    for (const filePath of filePaths) {
+      const fileName = filePath.split('/').pop() || filePath;
+      processedDescription = processedDescription.replace(
+        new RegExp(`<file\\s+path="${filePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\s*/>`, 'g'),
+        `@${fileName}`
+      );
+    }
+
+    return { description: processedDescription, referencedFiles };
+  }
+
+  async buildPlanningPrompt(task: Task, repositoryPath?: string): Promise<string> {
+    // Process file references in description
+    const { description: processedDescription, referencedFiles } = await this.processFileReferences(
+      task.description,
+      repositoryPath
+    );
+
     let prompt = '';
-    prompt += `## Current Task\n\n**Task**: ${task.title}\n**Description**: ${task.description}`;
+    prompt += `## Current Task\n\n**Task**: ${task.title}\n**Description**: ${processedDescription}`;
 
     if ((task as any).primary_repository) {
       prompt += `\n**Repository**: ${(task as any).primary_repository}`;
+    }
+
+    // Add referenced files from @ mentions
+    if (referencedFiles.length > 0) {
+      prompt += `\n\n## Referenced Files\n\n`;
+      for (const file of referencedFiles) {
+        prompt += `### ${file.path}\n\`\`\`\n${file.content}\n\`\`\`\n\n`;
+      }
     }
 
     try {
@@ -43,7 +125,7 @@ export class PromptBuilder {
     const templateVariables = {
       task_id: task.id,
       task_title: task.title,
-      task_description: task.description,
+      task_description: processedDescription,
       date: new Date().toISOString().split('T')[0],
       repository: ((task as any).primary_repository || '') as string,
     };
@@ -55,12 +137,26 @@ export class PromptBuilder {
     return prompt;
   }
 
-  async buildExecutionPrompt(task: Task): Promise<string> {
+  async buildExecutionPrompt(task: Task, repositoryPath?: string): Promise<string> {
+    // Process file references in description
+    const { description: processedDescription, referencedFiles } = await this.processFileReferences(
+      task.description,
+      repositoryPath
+    );
+
     let prompt = '';
-    prompt += `## Current Task\n\n**Task**: ${task.title}\n**Description**: ${task.description}`;
+    prompt += `## Current Task\n\n**Task**: ${task.title}\n**Description**: ${processedDescription}`;
 
     if ((task as any).primary_repository) {
       prompt += `\n**Repository**: ${(task as any).primary_repository}`;
+    }
+
+    // Add referenced files from @ mentions
+    if (referencedFiles.length > 0) {
+      prompt += `\n\n## Referenced Files\n\n`;
+      for (const file of referencedFiles) {
+        prompt += `### ${file.path}\n\`\`\`\n${file.content}\n\`\`\`\n\n`;
+      }
     }
 
     try {
