@@ -106,14 +106,14 @@ export class PostHogAPIClient {
     return response.json();
   }
 
-  private async getTeamId(): Promise<number> {
+  async getTeamId(): Promise<number> {
     if (this._teamId !== null) {
       return this._teamId;
     }
 
     // Fetch user info to get team ID (following Array's pattern)
     const userResponse = await this.apiRequest<any>('/api/users/@me/');
-    
+
     if (!userResponse.team?.id) {
       throw new Error('No team found for user');
     }
@@ -121,6 +121,19 @@ export class PostHogAPIClient {
     const teamId = Number(userResponse.team.id);
     this._teamId = teamId;
     return teamId;
+  }
+
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
+  getApiKey(): string {
+    return this.config.apiKey;
+  }
+
+  async getLlmGatewayUrl(): Promise<string> {
+    const teamId = await this.getTeamId();
+    return `${this.baseUrl}/api/projects/${teamId}/llm_gateway`;
   }
 
   async fetchTask(taskId: string): Promise<Task> {
