@@ -4,74 +4,46 @@ import { config } from "dotenv";
 config();
 
 import { Agent, PermissionMode } from './src/agent.js';
-import type { WorkflowExecutionOptions } from './src/workflow-types.js';
 
 async function testAgent() {
     const REPO_PATH = process.argv[2] || process.cwd();
-    const TASK_ID = process.argv[3];
-    
-    if (!process.env.POSTHOG_API_KEY) {
-        console.error("❌ POSTHOG_API_KEY required");
+    const PROMPT = process.argv.slice(3).join(' ');
+
+    if (!PROMPT) {
+        console.error("❌ Please provide a prompt");
+        console.log("\nUsage: bun run example.ts [repo_path] <prompt>");
+        console.log("Example: bun run example.ts . 'Add a new function to calculate fibonacci numbers'");
         process.exit(1);
     }
-    
+
     console.log(`📁 Working in: ${REPO_PATH}`);
-    
+    console.log(`💬 Prompt: ${PROMPT}\n`);
+
     const agent = new Agent({
         workingDirectory: REPO_PATH,
-        posthogApiUrl: process.env.POSTHOG_API_URL || "http://localhost:8010",
+        posthogApiUrl: process.env.POSTHOG_API_URL,
         posthogApiKey: process.env.POSTHOG_API_KEY,
         onEvent: (event) => {
             if (event.type === 'token') {
+                process.stdout.write(event.content || '');
                 return;
             }
-            console.log(`[event:${event.type}]`, event);
+            console.log(`\n[event:${event.type}]`, event);
         },
         debug: true,
     });
-    
-    if (TASK_ID) {
-        console.log(`🎯 Running task: ${TASK_ID}`);
-        const posthogApi = agent.getPostHogClient();
-        let poller: ReturnType<typeof setInterval> | undefined;
-        try {
-            // Example: list and run a workflow
-            await agent['workflowRegistry'].loadWorkflows();
-            const workflows = agent['workflowRegistry'].listWorkflows();
-            if (workflows.length === 0) {
-                throw new Error('No workflows available');
-            }
-            const selectedWorkflow = workflows[0];
-            const options: WorkflowExecutionOptions = {
-                repositoryPath: REPO_PATH,
-                permissionMode: PermissionMode.ACCEPT_EDITS,
-                autoProgress: true,
-            };
 
-            if (posthogApi) {
-                poller = setInterval(async () => {
-                    try {
-                        const progress = await posthogApi.getTaskProgress(TASK_ID);
-                        if (progress?.has_progress) {
-                            console.log(
-                                `📊 Progress: ${progress.status} | step=${progress.current_step} (${progress.completed_steps}/${progress.total_steps})`
-                            );
-                        }
-                    } catch (err) {
-                        console.warn('Failed to fetch task progress', err);
-                    }
-                }, 5000);
-            }
-            await agent.runWorkflow(TASK_ID, selectedWorkflow.id, options);
-            console.log("✅ Done!");
-            console.log(`📁 Plan stored in: .posthog/${TASK_ID}/plan.md`);
-        } finally {
-            if (poller) {
-                clearInterval(poller);
-            }
-        }
-    } else {
-        console.log("❌ Please provide a task ID");
+    try {
+        console.log("🚀 Starting execution...\n");
+        const result = await agent.run(PROMPT, {
+            repositoryPath: REPO_PATH,
+            permissionMode: PermissionMode.ACCEPT_EDITS,
+        });
+        console.log("\n\n✅ Done!");
+        console.log(`📊 Processed ${result.results.length} messages`);
+    } catch (error) {
+        console.error("\n❌ Error:", error);
+        process.exit(1);
     }
 }
 
