@@ -1,5 +1,11 @@
 # @posthog/agent
 
+## 1.4.0
+
+### Minor Changes
+
+- package now uses the LLM gateway instead of accepting an API key
+
 ## 1.3.1
 
 ### Patch Changes
