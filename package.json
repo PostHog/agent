@@ -45,6 +45,7 @@
     "@rollup/plugin-commonjs": "^25.0.7",
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@types/bun": "latest",
+    "@types/minimatch": "^6.0.0",
     "rimraf": "^6.0.1",
     "rollup": "^4.24.0",
     "rollup-plugin-copy": "^3.5.0",
