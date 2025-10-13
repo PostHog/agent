@@ -352,8 +352,13 @@ export class Agent {
         const results = [];
         for await (const message of response) {
             this.logger.debug('Received message in direct run', message);
+            // Emit raw SDK event
+            this.emitEvent(this.eventTransformer.createRawSDKEvent(message));
+            // Emit transformed event
             const transformedEvent = this.eventTransformer.transform(message);
-            this.onEvent?.(transformedEvent);
+            if (transformedEvent) {
+                this.emitEvent(transformedEvent);
+            }
             results.push(message);
         }
         

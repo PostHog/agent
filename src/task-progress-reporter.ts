@@ -120,14 +120,29 @@ export class TaskProgressReporter {
       case 'content_block_start':
       case 'content_block_stop':
       case 'compact_boundary':
-      case 'tool_call':
-      case 'tool_result':
       case 'message_start':
       case 'message_stop':
       case 'metric':
       case 'artifact':
+      case 'raw_sdk_event':
         // Skip verbose streaming artifacts from persistence
         return;
+
+      case 'tool_call': {
+        const logLine = this.formatToolCallEvent(event);
+        if (logLine) {
+          await this.appendLog(logLine);
+        }
+        return;
+      }
+
+      case 'tool_result': {
+        const logLine = this.formatToolResultEvent(event);
+        if (logLine) {
+          await this.appendLog(logLine);
+        }
+        return;
+      }
 
       case 'file_write':
         await this.appendLog(this.formatFileWriteEvent(event));
@@ -283,5 +298,32 @@ export class TaskProgressReporter {
     }
     const compact = text.replace(/\s+/g, ' ').trim();
     return compact.length > max ? `${compact.slice(0, max)}…` : compact;
+  }
+
+  private formatToolCallEvent(event: Extract<AgentEvent, { type: 'tool_call' }>): string | null {
+    // File operations to track
+    const fileOps = ['read_file', 'write', 'search_replace', 'delete_file', 'glob_file_search', 'file_search', 'list_dir', 'edit_notebook'];
+    // Terminal commands to track
+    const terminalOps = ['run_terminal_cmd', 'bash', 'shell'];
+
+    if (fileOps.includes(event.toolName)) {
+      // Extract file path from args
+      const path = event.args?.target_file || event.args?.file_path || event.args?.target_notebook || event.args?.target_directory || '';
+      return `[tool] ${event.toolName}${path ? `: ${path}` : ''}`;
+    } else if (terminalOps.includes(event.toolName)) {
+      // Extract command from args
+      const cmd = event.args?.command || '';
+      const truncated = cmd.length > 80 ? `${cmd.slice(0, 80)}…` : cmd;
+      return `[cmd] ${truncated}`;
+    }
+
+    // Skip other tools from persistence
+    return null;
+  }
+
+  private formatToolResultEvent(event: Extract<AgentEvent, { type: 'tool_result' }>): string | null {
+    // We don't need to log tool results separately - tool calls are sufficient
+    // This keeps the log concise
+    return null;
   }
 }
