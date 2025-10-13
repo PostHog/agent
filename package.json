@@ -32,9 +32,6 @@
     "build": "rimraf dist && rollup -c && tsc --project tsconfig.build.json --emitDeclarationOnly",
     "example": "bun run example-usage.ts",
     "dev": "bun run example-usage.ts",
-    "changeset": "changeset",
-    "version-packages": "changeset version",
-    "release": "changeset publish",
     "prepublishOnly": "bun run build"
   },
   "engines": {
