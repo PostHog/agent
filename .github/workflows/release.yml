@@ -56,7 +56,7 @@ jobs:
         run: bun run build
 
       - name: Publish the package to npm registry
-        run: bun publish --access public
+        run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
