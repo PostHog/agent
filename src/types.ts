@@ -257,3 +257,22 @@ export interface PostHogAPIConfig {
   apiUrl: string;
   apiKey: string;
 }
+
+// URL mention types
+export type ResourceType = 'error' | 'experiment' | 'insight' | 'feature_flag' | 'generic';
+
+export interface PostHogResource {
+  type: ResourceType;
+  id: string;
+  url: string;
+  title?: string;
+  content: string;
+  metadata?: Record<string, any>;
+}
+
+export interface UrlMention {
+  url: string;
+  type: ResourceType;
+  id?: string;
+  label?: string;
+}

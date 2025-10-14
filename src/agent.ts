@@ -89,6 +89,7 @@ export class Agent {
         const promptBuilder = new PromptBuilder({
             getTaskFiles: (taskId: string) => this.getTaskFiles(taskId),
             generatePlanTemplate: (vars) => this.templateManager.generatePlan(vars),
+            posthogClient: this.posthogAPI,
             logger: this.logger.child('PromptBuilder')
         });
         this.stageExecutor = new StageExecutor(

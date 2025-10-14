@@ -1,4 +1,4 @@
-import type { Task, SupportingFile, PostHogAPIConfig } from './types.js';
+import type { Task, SupportingFile, PostHogAPIConfig, PostHogResource, ResourceType, UrlMention } from './types.js';
 import type { WorkflowDefinition, AgentDefinition } from './workflow-types.js';
 
 interface PostHogApiResponse<T> {
@@ -257,5 +257,112 @@ export class PostHogAPIClient {
       method: 'POST',
       body: JSON.stringify(options || {}),
     });
+  }
+
+  /**
+   * Fetch error details from PostHog error tracking
+   */
+  async fetchErrorDetails(errorId: string, projectId?: string): Promise<PostHogResource> {
+    const teamId = projectId ? parseInt(projectId) : await this.getTeamId();
+    
+    try {
+      const errorData = await this.apiRequest<any>(`/api/projects/${teamId}/error_tracking/${errorId}/`);
+      
+      // Format error details for agent consumption
+      const content = this.formatErrorContent(errorData);
+      
+      return {
+        type: 'error',
+        id: errorId,
+        url: `${this.baseUrl}/project/${teamId}/error_tracking/${errorId}`,
+        title: errorData.exception_type || 'Unknown Error',
+        content,
+        metadata: {
+          exception_type: errorData.exception_type,
+          first_seen: errorData.first_seen,
+          last_seen: errorData.last_seen,
+          volume: errorData.volume,
+          users_affected: errorData.users_affected,
+        },
+      };
+    } catch (error) {
+      throw new Error(`Failed to fetch error details for ${errorId}: ${error}`);
+    }
+  }
+
+  /**
+   * Generic resource fetcher by URL or ID
+   */
+  async fetchResourceByUrl(urlMention: UrlMention): Promise<PostHogResource> {
+    switch (urlMention.type) {
+      case 'error':
+        if (!urlMention.id) {
+          throw new Error('Error ID is required for error resources');
+        }
+        // Extract project ID from URL if available, otherwise use default team
+        let projectId: string | undefined;
+        if (urlMention.url) {
+          const projectIdMatch = urlMention.url.match(/\/project\/(\d+)\//);
+          projectId = projectIdMatch ? projectIdMatch[1] : undefined;
+        }
+        return this.fetchErrorDetails(urlMention.id, projectId);
+      
+      case 'experiment':
+      case 'insight':
+      case 'feature_flag':
+        throw new Error(`Resource type '${urlMention.type}' not yet implemented`);
+      
+      case 'generic':
+        // Return a minimal resource for generic URLs
+        return {
+          type: 'generic',
+          id: '',
+          url: urlMention.url,
+          title: 'Generic Resource',
+          content: `Generic resource: ${urlMention.url}`,
+          metadata: {},
+        };
+      
+      default:
+        throw new Error(`Unknown resource type: ${urlMention.type}`);
+    }
+  }
+
+  /**
+   * Format error data for agent consumption
+   */
+  private formatErrorContent(errorData: any): string {
+    const sections = [];
+    
+    if (errorData.exception_type) {
+      sections.push(`**Error Type**: ${errorData.exception_type}`);
+    }
+    
+    if (errorData.exception_message) {
+      sections.push(`**Message**: ${errorData.exception_message}`);
+    }
+    
+    if (errorData.stack_trace) {
+      sections.push(`**Stack Trace**:\n\`\`\`\n${errorData.stack_trace}\n\`\`\``);
+    }
+    
+    if (errorData.volume) {
+      sections.push(`**Volume**: ${errorData.volume} occurrences`);
+    }
+    
+    if (errorData.users_affected) {
+      sections.push(`**Users Affected**: ${errorData.users_affected}`);
+    }
+    
+    if (errorData.first_seen && errorData.last_seen) {
+      sections.push(`**First Seen**: ${errorData.first_seen}`);
+      sections.push(`**Last Seen**: ${errorData.last_seen}`);
+    }
+    
+    if (errorData.properties && Object.keys(errorData.properties).length > 0) {
+      sections.push(`**Properties**: ${JSON.stringify(errorData.properties, null, 2)}`);
+    }
+    
+    return sections.join('\n\n');
   }
 }

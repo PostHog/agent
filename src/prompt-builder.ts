@@ -1,4 +1,4 @@
-import type { Task } from './types.js';
+import type { Task, UrlMention, PostHogResource } from './types.js';
 import type { TemplateVariables } from './template-manager.js';
 import { Logger } from './utils/logger.js';
 import { promises as fs } from 'fs';
@@ -7,17 +7,20 @@ import { join } from 'path';
 export interface PromptBuilderDeps {
   getTaskFiles: (taskId: string) => Promise<any[]>;
   generatePlanTemplate: (vars: TemplateVariables) => Promise<string>;
+  posthogClient?: { fetchResourceByUrl: (mention: UrlMention) => Promise<PostHogResource> };
   logger?: Logger;
 }
 
 export class PromptBuilder {
   private getTaskFiles: PromptBuilderDeps['getTaskFiles'];
   private generatePlanTemplate: PromptBuilderDeps['generatePlanTemplate'];
+  private posthogClient?: PromptBuilderDeps['posthogClient'];
   private logger: Logger;
 
   constructor(deps: PromptBuilderDeps) {
     this.getTaskFiles = deps.getTaskFiles;
     this.generatePlanTemplate = deps.generatePlanTemplate;
+    this.posthogClient = deps.posthogClient;
     this.logger = deps.logger || new Logger({ debug: false, prefix: '[PromptBuilder]' });
   }
 
@@ -49,6 +52,122 @@ export class PromptBuilder {
       this.logger.warn(`Failed to read referenced file: ${filePath}`, { error });
       return null;
     }
+  }
+
+  /**
+   * Extract URL mentions from XML tags in description
+   * Formats: <error id="..." />, <experiment id="..." />, <url href="..." />
+   */
+  private extractUrlMentions(description: string): UrlMention[] {
+    const mentions: UrlMention[] = [];
+    
+    // PostHog resource mentions: <error id="..." />, <experiment id="..." />, etc.
+    const resourceRegex = /<(error|experiment|insight|feature_flag)\s+id="([^"]+)"\s*\/>/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = resourceRegex.exec(description)) !== null) {
+      const [, type, id] = match;
+      mentions.push({
+        url: '', // Will be reconstructed if needed
+        type: type as any,
+        id,
+        label: this.generateUrlLabel('', type as any),
+      });
+    }
+
+    // Generic URL mentions: <url href="..." />
+    const urlRegex = /<url\s+href="([^"]+)"\s*\/>/g;
+    while ((match = urlRegex.exec(description)) !== null) {
+      const [, url] = match;
+      mentions.push({
+        url,
+        type: 'generic',
+        label: this.generateUrlLabel(url, 'generic'),
+      });
+    }
+
+    return mentions;
+  }
+
+  /**
+   * Generate a display label for a URL mention
+   */
+  private generateUrlLabel(url: string, type: string): string {
+    try {
+      const urlObj = new URL(url);
+      switch (type) {
+        case 'error':
+          const errorMatch = url.match(/error_tracking\/([a-f0-9-]+)/);
+          return errorMatch ? `Error ${errorMatch[1].slice(0, 8)}...` : 'Error';
+        case 'experiment':
+          const expMatch = url.match(/experiments\/(\d+)/);
+          return expMatch ? `Experiment #${expMatch[1]}` : 'Experiment';
+        case 'insight':
+          return 'Insight';
+        case 'feature_flag':
+          return 'Feature Flag';
+        default:
+          return urlObj.hostname;
+      }
+    } catch {
+      return 'URL';
+    }
+  }
+
+  /**
+   * Process URL references and fetch their content
+   */
+  private async processUrlReferences(
+    description: string
+  ): Promise<{ description: string; referencedResources: PostHogResource[] }> {
+    const urlMentions = this.extractUrlMentions(description);
+    const referencedResources: PostHogResource[] = [];
+
+    if (urlMentions.length === 0 || !this.posthogClient) {
+      return { description, referencedResources };
+    }
+
+    // Fetch all referenced resources
+    for (const mention of urlMentions) {
+      try {
+        const resource = await this.posthogClient.fetchResourceByUrl(mention);
+        referencedResources.push(resource);
+      } catch (error) {
+        this.logger.warn(`Failed to fetch resource from URL: ${mention.url}`, { error });
+        // Add a placeholder resource for failed fetches
+        referencedResources.push({
+          type: mention.type,
+          id: mention.id || '',
+          url: mention.url,
+          title: mention.label || 'Unknown Resource',
+          content: `Failed to fetch resource from ${mention.url}: ${error}`,
+          metadata: {},
+        });
+      }
+    }
+
+    // Replace URL tags with just the label for readability
+    let processedDescription = description;
+    for (const mention of urlMentions) {
+      if (mention.type === 'generic') {
+        // Generic URLs: <url href="..." />
+        const escapedUrl = mention.url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        processedDescription = processedDescription.replace(
+          new RegExp(`<url\\s+href="${escapedUrl}"\\s*/>`, 'g'),
+          `@${mention.label}`
+        );
+      } else {
+        // PostHog resources: <error id="..." />, <experiment id="..." />, etc.
+        const escapedType = mention.type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const escapedId = mention.id ? mention.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+        processedDescription = processedDescription.replace(
+          new RegExp(`<${escapedType}\\s+id="${escapedId}"\\s*/>`, 'g'),
+          `@${mention.label}`
+        );
+      }
+    }
+
+    return { description: processedDescription, referencedResources };
   }
 
   /**
@@ -89,9 +208,14 @@ export class PromptBuilder {
 
   async buildPlanningPrompt(task: Task, repositoryPath?: string): Promise<string> {
     // Process file references in description
-    const { description: processedDescription, referencedFiles } = await this.processFileReferences(
+    const { description: descriptionAfterFiles, referencedFiles } = await this.processFileReferences(
       task.description,
       repositoryPath
+    );
+
+    // Process URL references in description  
+    const { description: processedDescription, referencedResources } = await this.processUrlReferences(
+      descriptionAfterFiles
     );
 
     let prompt = '';
@@ -106,6 +230,14 @@ export class PromptBuilder {
       prompt += `\n\n## Referenced Files\n\n`;
       for (const file of referencedFiles) {
         prompt += `### ${file.path}\n\`\`\`\n${file.content}\n\`\`\`\n\n`;
+      }
+    }
+
+    // Add referenced resources from URL mentions
+    if (referencedResources.length > 0) {
+      prompt += `\n\n## Referenced Resources\n\n`;
+      for (const resource of referencedResources) {
+        prompt += `### ${resource.title} (${resource.type})\n**URL**: ${resource.url}\n\n${resource.content}\n\n`;
       }
     }
 
@@ -139,9 +271,14 @@ export class PromptBuilder {
 
   async buildExecutionPrompt(task: Task, repositoryPath?: string): Promise<string> {
     // Process file references in description
-    const { description: processedDescription, referencedFiles } = await this.processFileReferences(
+    const { description: descriptionAfterFiles, referencedFiles } = await this.processFileReferences(
       task.description,
       repositoryPath
+    );
+
+    // Process URL references in description  
+    const { description: processedDescription, referencedResources } = await this.processUrlReferences(
+      descriptionAfterFiles
     );
 
     let prompt = '';
@@ -156,6 +293,14 @@ export class PromptBuilder {
       prompt += `\n\n## Referenced Files\n\n`;
       for (const file of referencedFiles) {
         prompt += `### ${file.path}\n\`\`\`\n${file.content}\n\`\`\`\n\n`;
+      }
+    }
+
+    // Add referenced resources from URL mentions
+    if (referencedResources.length > 0) {
+      prompt += `\n\n## Referenced Resources\n\n`;
+      for (const resource of referencedResources) {
+        prompt += `### ${resource.title} (${resource.type})\n**URL**: ${resource.url}\n\n${resource.content}\n\n`;
       }
     }
 
