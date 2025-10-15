@@ -34,7 +34,7 @@ export type {
 
 // Provider adapter types
 export type { ProviderAdapter } from './src/adapters/types.js';
-export { ClaudeAdapter } from './src/adapters/claude/ClaudeAdapter.js';
+export { ClaudeAdapter } from './src/adapters/claude/claude-adapter.js';
 
 // Tool types
 export type {

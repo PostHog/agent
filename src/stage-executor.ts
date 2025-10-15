@@ -1,6 +1,6 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { Logger } from './utils/logger.js';
-import { ClaudeAdapter } from './adapters/claude/ClaudeAdapter.js';
+import { ClaudeAdapter } from './adapters/claude/claude-adapter.js';
 import { AgentRegistry } from './agent-registry.js';
 import type { AgentEvent, Task, McpServerConfig } from './types.js';
 import type { WorkflowStage, WorkflowStageExecutionResult, WorkflowExecutionOptions } from './workflow-types.js';

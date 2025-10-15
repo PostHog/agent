@@ -6,7 +6,7 @@ import { PostHogAPIClient } from './posthog-api.js';
 import { PostHogFileManager } from './file-manager.js';
 import { GitManager } from './git-manager.js';
 import { TemplateManager } from './template-manager.js';
-import { ClaudeAdapter } from './adapters/claude/ClaudeAdapter.js';
+import { ClaudeAdapter } from './adapters/claude/claude-adapter.js';
 import type { ProviderAdapter } from './adapters/types.js';
 import { PLANNING_SYSTEM_PROMPT } from './agents/planning.js';
 import { EXECUTION_SYSTEM_PROMPT } from './agents/execution.js';
