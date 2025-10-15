@@ -6,7 +6,8 @@ import { PostHogAPIClient } from './posthog-api.js';
 import { PostHogFileManager } from './file-manager.js';
 import { GitManager } from './git-manager.js';
 import { TemplateManager } from './template-manager.js';
-import { EventTransformer } from './event-transformer.js';
+import { ClaudeAdapter } from './adapters/claude/ClaudeAdapter.js';
+import type { ProviderAdapter } from './adapters/types.js';
 import { PLANNING_SYSTEM_PROMPT } from './agents/planning.js';
 import { EXECUTION_SYSTEM_PROMPT } from './agents/execution.js';
 import { Logger } from './utils/logger.js';
@@ -24,7 +25,7 @@ export class Agent {
     private fileManager: PostHogFileManager;
     private gitManager: GitManager;
     private templateManager: TemplateManager;
-    private eventTransformer: EventTransformer;
+    private adapter: ProviderAdapter;
     private logger: Logger;
     private agentRegistry: AgentRegistry;
     private workflowRegistry: WorkflowRegistry;
@@ -64,7 +65,8 @@ export class Agent {
         };
         this.logger = new Logger({ debug: this.debug, prefix: '[PostHog Agent]' });
         this.taskManager = new TaskManager();
-        this.eventTransformer = new EventTransformer();
+        // Hardcode Claude adapter for now - extensible for other providers later
+        this.adapter = new ClaudeAdapter();
 
         this.fileManager = new PostHogFileManager(
             this.workingDirectory,
@@ -185,7 +187,7 @@ export class Agent {
                 const atLastStage = currIdx >= 0 && currIdx === orderedStages.length - 1;
                 if (atLastStage) {
                     const finalStageKey = orderedStages[currIdx]?.key;
-                    this.emitEvent(this.eventTransformer.createStatusEvent('no_next_stage', { stage: finalStageKey }));
+                    this.emitEvent(this.adapter.createStatusEvent('no_next_stage', { stage: finalStageKey }));
                     await this.progressReporter.noNextStage(finalStageKey);
                     await this.progressReporter.complete();
                     this.taskManager.completeExecution(executionId, { task, workflow });
@@ -229,7 +231,7 @@ export class Agent {
     }
 
     async executeStage(task: Task, stage: WorkflowStage, options: WorkflowExecutionOptions = {}): Promise<void> {
-        this.emitEvent(this.eventTransformer.createStatusEvent('stage_start', { stage: stage.key }));
+        this.emitEvent(this.adapter.createStatusEvent('stage_start', { stage: stage.key }));
         const overrides = options.stageOverrides?.[stage.key];
         const agentName = stage.agent_name || 'code_generation';
         const agentDef = this.agentRegistry.getAgent(agentName);
@@ -243,12 +245,12 @@ export class Agent {
         if (isPlanning && shouldCreatePlanningBranch) {
             const planningBranch = await this.createPlanningBranch(task.id);
             await this.updateTaskBranch(task.id, planningBranch);
-            this.emitEvent(this.eventTransformer.createStatusEvent('branch_created', { stage: stage.key, branch: planningBranch }));
+            this.emitEvent(this.adapter.createStatusEvent('branch_created', { stage: stage.key, branch: planningBranch }));
             await this.progressReporter.branchCreated(stage.key, planningBranch);
         } else if (!isPlanning && !isManual && shouldCreateImplBranch) {
             const implBranch = await this.createImplementationBranch(task.id);
             await this.updateTaskBranch(task.id, implBranch);
-            this.emitEvent(this.eventTransformer.createStatusEvent('branch_created', { stage: stage.key, branch: implBranch }));
+            this.emitEvent(this.adapter.createStatusEvent('branch_created', { stage: stage.key, branch: implBranch }));
             await this.progressReporter.branchCreated(stage.key, implBranch);
         }
 
@@ -257,7 +259,7 @@ export class Agent {
         if (result.plan) {
             await this.writePlan(task.id, result.plan);
             await this.commitPlan(task.id, task.title);
-            this.emitEvent(this.eventTransformer.createStatusEvent('commit_made', { stage: stage.key, kind: 'plan' }));
+            this.emitEvent(this.adapter.createStatusEvent('commit_made', { stage: stage.key, kind: 'plan' }));
             await this.progressReporter.commitMade(stage.key, 'plan');
         }
 
@@ -272,19 +274,19 @@ export class Agent {
                     const implBranch = await this.createImplementationBranch(task.id);
                     await this.updateTaskBranch(task.id, implBranch);
                     branchName = implBranch;
-                    this.emitEvent(this.eventTransformer.createStatusEvent('branch_created', { stage: stage.key, branch: implBranch }));
+                    this.emitEvent(this.adapter.createStatusEvent('branch_created', { stage: stage.key, branch: implBranch }));
                     await this.progressReporter.branchCreated(stage.key, implBranch);
                 }
                 try {
                     const prUrl = await this.createPullRequest(task.id, branchName, task.title, task.description);
                     await this.updateTaskBranch(task.id, branchName);
                     await this.attachPullRequestToTask(task.id, prUrl, branchName);
-                    this.emitEvent(this.eventTransformer.createStatusEvent('pr_created', { stage: stage.key, prUrl }));
+                    this.emitEvent(this.adapter.createStatusEvent('pr_created', { stage: stage.key, prUrl }));
                     await this.progressReporter.pullRequestCreated(stage.key, prUrl);
                 } catch {}
             }
             // Do not auto-progress on manual stages
-            this.emitEvent(this.eventTransformer.createStatusEvent('stage_complete', { stage: stage.key }));
+            this.emitEvent(this.adapter.createStatusEvent('stage_complete', { stage: stage.key }));
             return;
         }
 
@@ -292,7 +294,7 @@ export class Agent {
             const existingPlan = await this.readPlan(task.id);
             const planSummary = existingPlan ? existingPlan.split('\n')[0] : undefined;
             await this.commitImplementation(task.id, task.title, planSummary);
-            this.emitEvent(this.eventTransformer.createStatusEvent('commit_made', { stage: stage.key, kind: 'implementation' }));
+            this.emitEvent(this.adapter.createStatusEvent('commit_made', { stage: stage.key, kind: 'implementation' }));
             await this.progressReporter.commitMade(stage.key, 'implementation');
         }
 
@@ -306,13 +308,13 @@ export class Agent {
                     const prUrl = await this.createPullRequest(task.id, branchName, task.title, task.description);
                     await this.updateTaskBranch(task.id, branchName);
                     await this.attachPullRequestToTask(task.id, prUrl, branchName);
-                    this.emitEvent(this.eventTransformer.createStatusEvent('pr_created', { stage: stage.key, prUrl }));
+                    this.emitEvent(this.adapter.createStatusEvent('pr_created', { stage: stage.key, prUrl }));
                     await this.progressReporter.pullRequestCreated(stage.key, prUrl);
                 } catch {}
             }
         }
 
-        this.emitEvent(this.eventTransformer.createStatusEvent('stage_complete', { stage: stage.key }));
+        this.emitEvent(this.adapter.createStatusEvent('stage_complete', { stage: stage.key }));
     }
 
     async progressToNextStage(taskId: string, currentStageKey?: string): Promise<void> {
@@ -326,7 +328,7 @@ export class Agent {
                     stage: currentStageKey,
                     error: error.message,
                 });
-                this.emitEvent(this.eventTransformer.createStatusEvent('no_next_stage', { stage: currentStageKey }));
+                this.emitEvent(this.adapter.createStatusEvent('no_next_stage', { stage: currentStageKey }));
                 await this.progressReporter.noNextStage(currentStageKey);
                 return;
             }
@@ -354,9 +356,9 @@ export class Agent {
         for await (const message of response) {
             this.logger.debug('Received message in direct run', message);
             // Emit raw SDK event
-            this.emitEvent(this.eventTransformer.createRawSDKEvent(message));
+            this.emitEvent(this.adapter.createRawSDKEvent(message));
             // Emit transformed event
-            const transformedEvent = this.eventTransformer.transform(message);
+            const transformedEvent = this.adapter.transform(message);
             if (transformedEvent) {
                 this.emitEvent(transformedEvent);
             }

@@ -1,7 +1,15 @@
-import type { AgentEvent } from './types.js';
+import type { AgentEvent } from '../../types.js';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { ProviderAdapter } from '../types.js';
+import { ClaudeToolMapper } from './tool-mapper.js';
 
-export class EventTransformer {
+/**
+ * Claude provider adapter.
+ * Transforms Claude SDK messages into our standardized AgentEvent format.
+ */
+export class ClaudeAdapter implements ProviderAdapter {
+  readonly name = 'claude';
+  private toolMapper = new ClaudeToolMapper();
   createRawSDKEvent(sdkMessage: any): AgentEvent {
     return {
       type: 'raw_sdk_event',
@@ -117,23 +125,26 @@ export class EventTransformer {
     // Handle assistant messages (full message, not streaming)
     if (sdkMessage.type === 'assistant') {
       const message = sdkMessage.message;
-      
+
       // Extract tool calls from content blocks
       if (message.content && Array.isArray(message.content)) {
         for (const block of message.content) {
           if (block.type === 'tool_use') {
-            // Return first tool_call event found
-            return {
+            // Create tool_call event and enrich with metadata
+            const toolCallEvent = {
               ...baseEvent,
-              type: 'tool_call',
+              type: 'tool_call' as const,
               toolName: block.name,
               callId: block.id,
-              args: block.input || {}
+              args: block.input || {},
+              parentToolUseId: sdkMessage.parent_tool_use_id
             };
+            // Enrich with tool metadata
+            return this.toolMapper.enrichToolCall(toolCallEvent);
           }
         }
       }
-      
+
       // If no tool calls, emit status event
       return {
         ...baseEvent,
@@ -147,22 +158,27 @@ export class EventTransformer {
     // Handle user messages
     if (sdkMessage.type === 'user') {
       const message = sdkMessage.message;
-      
+
       // Check for tool results in content blocks
       if (message?.content && Array.isArray(message.content)) {
         for (const block of message.content) {
           if (block.type === 'tool_result') {
-            return {
+            // Create tool_result event and enrich with metadata
+            const toolResultEvent = {
               ...baseEvent,
-              type: 'tool_result',
+              type: 'tool_result' as const,
               toolName: block.tool_name || 'unknown',
               callId: block.tool_use_id || '',
-              result: block.content
+              result: block.content,
+              isError: block.is_error,
+              parentToolUseId: sdkMessage.parent_tool_use_id
             };
+            // Enrich with tool metadata
+            return this.toolMapper.enrichToolResult(toolResultEvent);
           }
         }
       }
-      
+
       // Otherwise extract text content
       const textContent = this.extractUserContent(message?.content);
       if (!textContent) {
@@ -182,10 +198,14 @@ export class EventTransformer {
         return {
           ...baseEvent,
           type: 'done',
+          result: sdkMessage.result,
           durationMs: sdkMessage.duration_ms,
+          durationApiMs: sdkMessage.duration_api_ms,
           numTurns: sdkMessage.num_turns,
           totalCostUsd: sdkMessage.total_cost_usd,
-          usage: sdkMessage.usage
+          usage: sdkMessage.usage,
+          modelUsage: sdkMessage.modelUsage,
+          permissionDenials: sdkMessage.permission_denials
         };
       } else {
         return {
@@ -214,7 +234,11 @@ export class EventTransformer {
           tools: sdkMessage.tools,
           permissionMode: sdkMessage.permissionMode,
           cwd: sdkMessage.cwd,
-          apiKeySource: sdkMessage.apiKeySource
+          apiKeySource: sdkMessage.apiKeySource,
+          agents: sdkMessage.agents,
+          slashCommands: sdkMessage.slash_commands,
+          outputStyle: sdkMessage.output_style,
+          mcpServers: sdkMessage.mcp_servers
         };
       } else if (sdkMessage.subtype === 'compact_boundary') {
         return {
@@ -229,7 +253,7 @@ export class EventTransformer {
     return null;
   }
   
-  createStatusEvent(phase: string, additionalData?: any): AgentEvent {
+  createStatusEvent(phase: string, additionalData?: any): import('../../types.js').StatusEvent {
     return {
       type: 'status',
       ts: Date.now(),

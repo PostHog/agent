@@ -69,6 +69,10 @@ export interface ToolCallEvent extends BaseEvent {
   toolName: string;
   callId: string;
   args: Record<string, any>;
+  parentToolUseId?: string | null;  // For nested tool calls (subagents)
+  // Tool metadata (enriched by adapter for UI consumption)
+  tool?: import('./tools/types.js').Tool;
+  category?: import('./tools/types.js').ToolCategory;
 }
 
 export interface ToolResultEvent extends BaseEvent {
@@ -76,6 +80,11 @@ export interface ToolResultEvent extends BaseEvent {
   toolName: string;
   callId: string;
   result: any;
+  isError?: boolean;                // Whether the tool execution failed
+  parentToolUseId?: string | null;  // For nested tool calls (subagents)
+  // Tool metadata (enriched by adapter for UI consumption)
+  tool?: import('./tools/types.js').Tool;
+  category?: import('./tools/types.js').ToolCategory;
 }
 
 // Message lifecycle events
@@ -109,7 +118,16 @@ export interface UserMessageEvent extends BaseEvent {
 export interface StatusEvent extends BaseEvent {
   type: 'status';
   phase: string;
-  [key: string]: any;
+  // Common optional fields (varies by phase):
+  stage?: string;           // Workflow stage (plan, code, complete)
+  kind?: string;            // Kind of status (plan, implementation)
+  branch?: string;          // Git branch name
+  prUrl?: string;           // Pull request URL
+  workflowId?: string;      // Workflow identifier
+  taskId?: string;          // Task identifier
+  messageId?: string;       // Claude message ID
+  model?: string;           // Model name
+  [key: string]: any;       // Allow additional fields
 }
 
 export interface InitEvent extends BaseEvent {
@@ -119,6 +137,10 @@ export interface InitEvent extends BaseEvent {
   permissionMode: string;
   cwd: string;
   apiKeySource: string;
+  agents?: string[];
+  slashCommands?: string[];
+  outputStyle?: string;
+  mcpServers?: Array<{ name: string; status: string }>;
 }
 
 export interface CompactBoundaryEvent extends BaseEvent {
@@ -130,10 +152,28 @@ export interface CompactBoundaryEvent extends BaseEvent {
 // Result events
 export interface DoneEvent extends BaseEvent {
   type: 'done';
+  result?: string;              // Final summary text from Claude
   durationMs?: number;
+  durationApiMs?: number;       // API-only duration (excluding local processing)
   numTurns?: number;
   totalCostUsd?: number;
   usage?: any;
+  modelUsage?: {                // Per-model usage breakdown
+    [modelName: string]: {
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadInputTokens: number;
+      cacheCreationInputTokens: number;
+      webSearchRequests: number;
+      costUSD: number;
+      contextWindow: number;
+    };
+  };
+  permissionDenials?: Array<{   // Tools that were denied by permissions
+    tool_name: string;
+    tool_use_id: string;
+    tool_input: Record<string, unknown>;
+  }>;
 }
 
 export interface ErrorEvent extends BaseEvent {
@@ -145,20 +185,7 @@ export interface ErrorEvent extends BaseEvent {
   sdkError?: any; // Original SDK error object
 }
 
-// Legacy events (keeping for backwards compatibility)
-export interface DiffEvent extends BaseEvent {
-  type: 'diff';
-  file: string;
-  patch: string;
-  summary?: string;
-}
-
-export interface FileWriteEvent extends BaseEvent {
-  type: 'file_write';
-  path: string;
-  bytes: number;
-}
-
+// Metric and artifact events (general purpose, not tool-specific)
 export interface MetricEvent extends BaseEvent {
   type: 'metric';
   key: string;
@@ -192,8 +219,6 @@ export type AgentEvent =
   | CompactBoundaryEvent
   | DoneEvent
   | ErrorEvent
-  | DiffEvent
-  | FileWriteEvent
   | MetricEvent
   | ArtifactEvent
   | RawSDKEvent;

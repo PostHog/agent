@@ -31,3 +31,30 @@ export {
 export type {
     LoggerConfig
 } from './src/utils/logger.js';
+
+// Provider adapter types
+export type { ProviderAdapter } from './src/adapters/types.js';
+export { ClaudeAdapter } from './src/adapters/claude/ClaudeAdapter.js';
+
+// Tool types
+export type {
+    Tool,
+    ToolCategory,
+    KnownTool,
+    ReadTool,
+    WriteTool,
+    EditTool,
+    GlobTool,
+    NotebookEditTool,
+    BashTool,
+    BashOutputTool,
+    KillShellTool,
+    WebFetchTool,
+    WebSearchTool,
+    GrepTool,
+    TaskTool,
+    TodoWriteTool,
+    ExitPlanModeTool,
+    SlashCommandTool,
+} from './src/tools/types.js';
+export { ToolRegistry } from './src/tools/registry.js';
