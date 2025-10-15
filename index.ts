@@ -12,7 +12,8 @@ export type {
     SupportingFile,
     ExecutionResult,
     AgentConfig,
-    McpServerConfig
+    McpServerConfig,
+    AgentEvent
 } from './src/types.js';
 
 export type {
