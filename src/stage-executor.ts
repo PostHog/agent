@@ -1,6 +1,6 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { Logger } from './utils/logger.js';
-import { EventTransformer } from './event-transformer.js';
+import { ClaudeAdapter } from './adapters/claude/claude-adapter.js';
 import { AgentRegistry } from './agent-registry.js';
 import type { AgentEvent, Task, McpServerConfig } from './types.js';
 import type { WorkflowStage, WorkflowStageExecutionResult, WorkflowExecutionOptions } from './workflow-types.js';
@@ -11,7 +11,7 @@ import { PromptBuilder } from './prompt-builder.js';
 export class StageExecutor {
   private registry: AgentRegistry;
   private logger: Logger;
-  private eventTransformer: EventTransformer;
+  private adapter: ClaudeAdapter;
   private promptBuilder: PromptBuilder;
   private eventHandler?: (event: AgentEvent) => void;
   private mcpServers?: Record<string, McpServerConfig>;
@@ -25,7 +25,7 @@ export class StageExecutor {
   ) {
     this.registry = registry;
     this.logger = logger.child('StageExecutor');
-    this.eventTransformer = new EventTransformer();
+    this.adapter = new ClaudeAdapter();
     this.promptBuilder = promptBuilder || new PromptBuilder({
       getTaskFiles: async () => [],
       generatePlanTemplate: async () => '',
@@ -96,17 +96,17 @@ export class StageExecutor {
     let plan = '';
     for await (const message of response) {
       // Emit raw SDK event first
-      this.eventHandler?.(this.eventTransformer.createRawSDKEvent(message));
-      
+      this.eventHandler?.(this.adapter.createRawSDKEvent(message));
+
       // Then emit transformed event
-      const transformed = this.eventTransformer.transform(message);
+      const transformed = this.adapter.transform(message);
       if (transformed) {
         if (transformed.type !== 'token') {
           this.logger.debug('Planning event', { type: transformed.type });
         }
         this.eventHandler?.(transformed);
       }
-      
+
       if (message.type === 'assistant' && message.message?.content) {
         for (const c of message.message.content) {
           if (c.type === 'text' && c.text) plan += c.text + '\n';
@@ -142,17 +142,17 @@ export class StageExecutor {
     const results: any[] = [];
     for await (const message of response) {
       // Emit raw SDK event first
-      this.eventHandler?.(this.eventTransformer.createRawSDKEvent(message));
-      
+      this.eventHandler?.(this.adapter.createRawSDKEvent(message));
+
       // Then emit transformed event
-      const transformed = this.eventTransformer.transform(message);
+      const transformed = this.adapter.transform(message);
       if (transformed) {
         if (transformed.type !== 'token') {
           this.logger.debug('Execution event', { type: transformed.type });
         }
         this.eventHandler?.(transformed);
       }
-      
+
       results.push(message);
     }
     return { results };

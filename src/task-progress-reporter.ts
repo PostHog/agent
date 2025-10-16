@@ -144,14 +144,6 @@ export class TaskProgressReporter {
         return;
       }
 
-      case 'file_write':
-        await this.appendLog(this.formatFileWriteEvent(event));
-        return;
-
-      case 'diff':
-        await this.appendLog(this.formatDiffEvent(event));
-        return;
-
       case 'status':
         // Status events are covered by dedicated progress updates
         return;
@@ -280,17 +272,6 @@ export class TaskProgressReporter {
     return `[user] ${preview}`;
   }
 
-  private formatFileWriteEvent(event: Extract<AgentEvent, { type: 'file_write' }>): string {
-    const size = event.bytes !== undefined ? ` (${event.bytes} bytes)` : '';
-    return `[file] wrote ${event.path}${size}`;
-  }
-
-  private formatDiffEvent(event: Extract<AgentEvent, { type: 'diff' }>): string {
-    const summary = event.summary
-      ? event.summary.trim()
-      : this.truncateMultiline(event.patch ?? '', 160);
-    return `[diff] ${event.file}${summary ? ` | ${summary}` : ''}`;
-  }
 
   private truncateMultiline(text: string, max = 160): string {
     if (!text) {
