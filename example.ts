@@ -51,17 +51,15 @@ async function testAgent() {
             if (posthogApi) {
                 poller = setInterval(async () => {
                     try {
-                        const runs = await posthogApi.listTaskRuns(TASK_ID);
-                        const latestRun = runs?.sort((a, b) =>
-                            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-                        )[0];
+                        const task = await posthogApi.fetchTask(TASK_ID);
+                        const latestRun = task?.latest_run;
                         if (latestRun) {
                             console.log(
                                 `📊 Progress: ${latestRun.status} | stage=${latestRun.current_stage}`
                             );
                         }
                     } catch (err) {
-                        console.warn('Failed to fetch task runs', err);
+                        console.warn('Failed to fetch task progress', err);
                     }
                 }, 5000);
             }
