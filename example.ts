@@ -51,10 +51,11 @@ async function testAgent() {
             if (posthogApi) {
                 poller = setInterval(async () => {
                     try {
-                        const progress = await posthogApi.getTaskProgress(TASK_ID);
-                        if (progress?.has_progress) {
+                        const task = await posthogApi.fetchTask(TASK_ID);
+                        const latestRun = task?.latest_run;
+                        if (latestRun) {
                             console.log(
-                                `📊 Progress: ${progress.status} | step=${progress.current_step} (${progress.completed_steps}/${progress.total_steps})`
+                                `📊 Progress: ${latestRun.status} | stage=${latestRun.current_stage}`
                             );
                         }
                     } catch (err) {

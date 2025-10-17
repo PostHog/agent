@@ -9,6 +9,7 @@ export {
 
 export type {
     Task,
+    TaskRun,
     SupportingFile,
     ExecutionResult,
     AgentConfig,

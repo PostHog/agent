@@ -1,11 +1,8 @@
 import type { Logger } from './utils/logger.js';
-import type { PostHogAPIClient, TaskProgressRecord, TaskProgressUpdate } from './posthog-api.js';
-import type { AgentEvent } from './types.js';
+import type { PostHogAPIClient, TaskRunUpdate } from './posthog-api.js';
+import type { AgentEvent, TaskRun } from './types.js';
 
 interface ProgressMetadata {
-  workflowId?: string;
-  workflowRunId?: string;
-  activityId?: string;
   totalSteps?: number;
 }
 
@@ -18,7 +15,7 @@ interface ProgressMetadata {
 export class TaskProgressReporter {
   private posthogAPI?: PostHogAPIClient;
   private logger: Logger;
-  private progressRecord?: TaskProgressRecord;
+  private taskRun?: TaskRun;
   private taskId?: string;
   private outputLog: string[] = [];
   private totalSteps?: number;
@@ -29,8 +26,8 @@ export class TaskProgressReporter {
     this.logger = logger.child('TaskProgressReporter');
   }
 
-  get progressId(): string | undefined {
-    return this.progressRecord?.id;
+  get runId(): string | undefined {
+    return this.taskRun?.id;
   }
 
   async start(taskId: string, metadata: ProgressMetadata = {}): Promise<void> {
@@ -42,37 +39,27 @@ export class TaskProgressReporter {
     this.totalSteps = metadata.totalSteps;
 
     try {
-      const record = await this.posthogAPI.createTaskProgress(taskId, {
+      const run = await this.posthogAPI.createTaskRun(taskId, {
         status: 'started',
-        current_step: 'initializing',
-        total_steps: metadata.totalSteps ?? 0,
-        completed_steps: 0,
-        workflow_id: metadata.workflowId,
-        workflow_run_id: metadata.workflowRunId,
-        activity_id: metadata.activityId,
-        output_log: '',
+        log: [],
       });
-      this.progressRecord = record;
-      this.outputLog = record.output_log ? record.output_log.split('\n') : [];
-      this.logger.debug('Created task progress record', { taskId, progressId: record.id });
+      this.taskRun = run;
+      this.outputLog = [];
+      this.logger.debug('Created task run', { taskId, runId: run.id });
     } catch (error) {
-      this.logger.warn('Failed to create task progress record', { taskId, error: (error as Error).message });
+      this.logger.warn('Failed to create task run', { taskId, error: (error as Error).message });
     }
   }
 
   async stageStarted(stageKey: string, stageIndex: number): Promise<void> {
     await this.update({
       status: 'in_progress',
-      current_step: stageKey,
-      completed_steps: Math.min(stageIndex, this.totalSteps ?? stageIndex),
     }, `Stage started: ${stageKey}`);
   }
 
   async stageCompleted(stageKey: string, completedStages: number): Promise<void> {
     await this.update({
       status: 'in_progress',
-      current_step: stageKey,
-      completed_steps: Math.min(completedStages, this.totalSteps ?? completedStages),
     }, `Stage completed: ${stageKey}`);
   }
 
@@ -97,7 +84,7 @@ export class TaskProgressReporter {
   }
 
   async complete(): Promise<void> {
-    await this.update({ status: 'completed', completed_steps: this.totalSteps }, 'Workflow execution completed');
+    await this.update({ status: 'completed' }, 'Workflow execution completed');
   }
 
   async fail(error: Error | string): Promise<void> {
@@ -110,7 +97,7 @@ export class TaskProgressReporter {
   }
 
   async recordEvent(event: AgentEvent): Promise<void> {
-    if (!this.posthogAPI || !this.progressId || !this.taskId) {
+    if (!this.posthogAPI || !this.runId || !this.taskId) {
       return;
     }
 
@@ -178,32 +165,39 @@ export class TaskProgressReporter {
     }
   }
 
-  private async update(update: TaskProgressUpdate, logLine?: string): Promise<void> {
-    if (!this.posthogAPI || !this.progressId || !this.taskId) {
+  private async update(update: TaskRunUpdate, logLine?: string): Promise<void> {
+    if (!this.posthogAPI || !this.runId || !this.taskId) {
       return;
     }
 
-    if (logLine) {
-      if (logLine !== this.lastLogEntry) {
-        this.outputLog.push(logLine);
+    // If there's a log line, append it separately using the append_log endpoint
+    if (logLine && logLine !== this.lastLogEntry) {
+      try {
+        await this.posthogAPI.appendTaskRunLog(this.taskId, this.runId, [
+          { type: 'info', message: logLine }
+        ]);
         this.lastLogEntry = logLine;
+      } catch (error) {
+        this.logger.warn('Failed to append log entry', {
+          taskId: this.taskId,
+          runId: this.runId,
+          error: (error as Error).message,
+        });
       }
-      update.output_log = this.outputLog.join('\n');
     }
 
-    try {
-      const record = await this.posthogAPI.updateTaskProgress(this.taskId, this.progressId, update);
-      // Sync local cache with server response to avoid drift if server modifies values
-      this.progressRecord = record;
-      if (record.output_log !== undefined && record.output_log !== null) {
-        this.outputLog = record.output_log ? record.output_log.split('\n') : [];
+    // Update other fields if provided
+    if (Object.keys(update).length > 0) {
+      try {
+        const run = await this.posthogAPI.updateTaskRun(this.taskId, this.runId, update);
+        this.taskRun = run;
+      } catch (error) {
+        this.logger.warn('Failed to update task run', {
+          taskId: this.taskId,
+          runId: this.runId,
+          error: (error as Error).message,
+        });
       }
-    } catch (error) {
-      this.logger.warn('Failed to update task progress record', {
-        taskId: this.taskId,
-        progressId: this.progressId,
-        error: (error as Error).message,
-      });
     }
   }
 
