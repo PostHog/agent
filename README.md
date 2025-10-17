@@ -15,7 +15,7 @@ bun run example
 - **PostHog Integration**: Fetches existing tasks from PostHog API
 - **Configurable Workflows**: Execute tasks via PostHog-defined or local workflows
 - **Branch Management**: Automatic branch creation for planning and implementation
-- **Progress Tracking**: Execution status stored in PostHog `TaskProgress` records for easy polling
+- **Progress Tracking**: Execution status stored in PostHog `TaskRun` records for easy polling
 
 ## Usage
 
@@ -96,7 +96,7 @@ your-repo/
 
 ## Progress Updates
 
-Progress for each task execution is persisted to PostHog's `TaskProgress` model, so UIs can poll for updates without relying on streaming hooks:
+Progress for each task execution is persisted to PostHog's `TaskRun` model, so UIs can poll for updates without relying on streaming hooks:
 
 ```typescript
 const agent = new Agent({
@@ -106,9 +106,12 @@ const agent = new Agent({
 });
 
 const poller = setInterval(async () => {
-  const progress = await agent.getPostHogClient()?.getTaskProgress(taskId);
-  if (progress?.has_progress) {
-    renderProgress(progress.status, progress.current_step, progress.completed_steps, progress.total_steps);
+  const runs = await agent.getPostHogClient()?.listTaskRuns(taskId);
+  const latestRun = runs?.sort((a, b) =>
+    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )[0];
+  if (latestRun) {
+    renderProgress(latestRun.status, latestRun.log, latestRun.current_stage);
   }
 }, 3000);
 

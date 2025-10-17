@@ -1,4 +1,4 @@
-import type { Task, SupportingFile, PostHogAPIConfig, PostHogResource, ResourceType, UrlMention } from './types.js';
+import type { Task, TaskRun, SupportingFile, PostHogAPIConfig, PostHogResource, ResourceType, UrlMention } from './types.js';
 import type { WorkflowDefinition, AgentDefinition } from './workflow-types.js';
 
 interface PostHogApiResponse<T> {
@@ -8,52 +8,14 @@ interface PostHogApiResponse<T> {
   previous?: string | null;
 }
 
-interface TaskProgressResponse {
-  has_progress: boolean;
-  id?: string;
-  status?: "started" | "in_progress" | "completed" | "failed";
-  current_step?: string;
-  completed_steps?: number;
-  total_steps?: number;
-  progress_percentage?: number;
-  output_log?: string;
-  error_message?: string;
-  created_at?: string;
-  updated_at?: string;
-  completed_at?: string;
-  workflow_id?: string;
-  workflow_run_id?: string;
-  message?: string;
-}
-
-export interface TaskProgressRecord {
-  id: string;
-  task: string;
-  status: "started" | "in_progress" | "completed" | "failed";
-  current_step?: string | null;
-  completed_steps?: number | null;
-  total_steps?: number | null;
-  progress_percentage?: number | null;
-  output_log?: string | null;
+export interface TaskRunUpdate {
+  status?: TaskRun["status"];
+  branch?: string | null;
+  current_stage?: string | null;
+  log?: string;
   error_message?: string | null;
-  workflow_id?: string | null;
-  workflow_run_id?: string | null;
-  activity_id?: string | null;
-  created_at: string;
-  updated_at: string;
-  completed_at?: string | null;
-}
-
-export interface TaskProgressUpdate {
-  status?: TaskProgressRecord["status"];
-  current_step?: string | null;
-  completed_steps?: number | null;
-  total_steps?: number | null;
-  output_log?: string | null;
-  error_message?: string | null;
-  workflow_id?: string | null;
-  workflow_run_id?: string | null;
-  activity_id?: string | null;
+  output?: Record<string, unknown> | null;
+  state?: Record<string, unknown>;
 }
 
 export class PostHogAPIClient {
@@ -172,65 +134,68 @@ export class PostHogAPIClient {
     });
   }
 
-  async updateTaskStage(taskId: string, stageId: string): Promise<Task> {
+  // TaskRun methods
+  async listTaskRuns(taskId: string): Promise<TaskRun[]> {
     const teamId = await this.getTeamId();
-    return this.apiRequest<Task>(`/api/projects/${teamId}/tasks/${taskId}/update_stage/`, {
+    const response = await this.apiRequest<PostHogApiResponse<TaskRun>>(
+      `/api/projects/${teamId}/tasks/${taskId}/runs/`
+    );
+    return response.results || [];
+  }
+
+  async getTaskRun(taskId: string, runId: string): Promise<TaskRun> {
+    const teamId = await this.getTeamId();
+    return this.apiRequest<TaskRun>(`/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/`);
+  }
+
+  async createTaskRun(
+    taskId: string,
+    payload?: Partial<Omit<TaskRun, 'id' | 'task' | 'team' | 'created_at' | 'updated_at' | 'completed_at'>>
+  ): Promise<TaskRun> {
+    const teamId = await this.getTeamId();
+    return this.apiRequest<TaskRun>(`/api/projects/${teamId}/tasks/${taskId}/runs/`, {
+      method: "POST",
+      body: JSON.stringify(payload || {}),
+    });
+  }
+
+  async updateTaskRun(
+    taskId: string,
+    runId: string,
+    payload: TaskRunUpdate
+  ): Promise<TaskRun> {
+    const teamId = await this.getTeamId();
+    return this.apiRequest<TaskRun>(`/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateTaskRunStage(taskId: string, runId: string, stageId: string): Promise<TaskRun> {
+    const teamId = await this.getTeamId();
+    return this.apiRequest<TaskRun>(`/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/update_stage/`, {
       method: 'PATCH',
       body: JSON.stringify({ current_stage: stageId }),
     });
   }
 
-  async setTaskBranch(taskId: string, branch: string): Promise<Task> {
+  async progressTaskRun(taskId: string, runId: string, nextStageId?: string): Promise<TaskRun> {
     const teamId = await this.getTeamId();
-    return this.apiRequest<Task>(`/api/projects/${teamId}/tasks/${taskId}/set_branch/`, {
-      method: "POST",
-      body: JSON.stringify({ branch }),
-    });
-  }
-
-  async attachTaskPullRequest(taskId: string, prUrl: string, branch?: string): Promise<Task> {
-    const teamId = await this.getTeamId();
-    const payload: Record<string, string> = { pr_url: prUrl };
-    if (branch) {
-      payload.branch = branch;
+    const payload: Record<string, string> = {};
+    if (nextStageId) {
+      payload.next_stage_id = nextStageId;
     }
-    return this.apiRequest<Task>(`/api/projects/${teamId}/tasks/${taskId}/attach_pr/`, {
-      method: "POST",
+    return this.apiRequest<TaskRun>(`/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/progress_run/`, {
+      method: 'POST',
       body: JSON.stringify(payload),
     });
   }
 
-  async getTaskProgress(taskId: string): Promise<TaskProgressResponse> {
+  async setTaskRunOutput(taskId: string, runId: string, output: Record<string, unknown>): Promise<TaskRun> {
     const teamId = await this.getTeamId();
-    return this.apiRequest<TaskProgressResponse>(`/api/projects/${teamId}/tasks/${taskId}/progress/`);
-  }
-
-  async createTaskProgress(
-    taskId: string,
-    payload: TaskProgressUpdate & { status: TaskProgressRecord["status"] }
-  ): Promise<TaskProgressRecord> {
-    const teamId = await this.getTeamId();
-    return this.apiRequest<TaskProgressRecord>(`/api/projects/${teamId}/task_progress/`, {
-      method: "POST",
-      body: JSON.stringify({
-        ...payload,
-        task: taskId,
-      }),
-    });
-  }
-
-  async updateTaskProgress(
-    taskId: string,
-    progressId: string,
-    payload: TaskProgressUpdate
-  ): Promise<TaskProgressRecord> {
-    const teamId = await this.getTeamId();
-    return this.apiRequest<TaskProgressRecord>(`/api/projects/${teamId}/task_progress/${progressId}/`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        ...payload,
-        task: taskId,
-      }),
+    return this.apiRequest<TaskRun>(`/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/set_output/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ output }),
     });
   }
 
@@ -249,14 +214,6 @@ export class PostHogAPIClient {
   // Agent catalog exposure
   async listAgents(): Promise<AgentDefinition[]> {
     return this.apiRequest<AgentDefinition[]>(`/api/agents/`);
-  }
-
-  async progressTask(taskId: string, options?: { next_stage_id?: string; auto?: boolean }): Promise<Task> {
-    const teamId = await this.getTeamId();
-    return this.apiRequest<Task>(`/api/projects/${teamId}/tasks/${taskId}/progress_task/`, {
-      method: 'POST',
-      body: JSON.stringify(options || {}),
-    });
   }
 
   /**
