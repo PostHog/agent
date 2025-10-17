@@ -23,6 +23,18 @@ export class GitManager {
   private authorEmail?: string;
   private logger: Logger;
 
+  // Utility: Ensure branch name components are safe for shell and Git
+  private sanitizeBranchComponent(component: string): string {
+    // Allow alphanumerics, '-', '_', '/', and '.'. Replace all others with '-'.
+    // Git branch names: https://git-scm.com/docs/git-check-ref-format
+    // For extra safety, strip leading/trailing `/`, `.`, or `-`, and remove consecutive `/`
+    let out = component.replace(/[^a-zA-Z0-9\-_.\/]/g, '-');
+    out = out.replace(/\/{2,}/g, '/');
+    out = out.replace(/^[\-\/\.]+|[\-\/\.]+$/g, '');
+    if (out.length === 0) throw new Error("Invalid or empty branch name component after sanitization.");
+    return out;
+  }
+
   constructor(config: GitConfig) {
     this.repositoryPath = config.repositoryPath;
     this.authorName = config.authorName;
@@ -163,13 +175,16 @@ export class GitManager {
 
   // Utility methods for PostHog task workflow
   private async generateUniqueBranchName(taskSlug: string, branchType: 'planning' | 'implementation'): Promise<string> {
+    // Sanitize all user-controlled branch name components
+    const safeSlug = this.sanitizeBranchComponent(taskSlug);
+    const safeType = this.sanitizeBranchComponent(branchType);
     let counter = 1;
-    let branchName = `posthog/${taskSlug}/${branchType}/${counter}`;
+    let branchName = `posthog/${safeSlug}/${safeType}/${counter}`;
 
     // Find a unique branch name if the base name already exists
     while (await this.branchExists(branchName)) {
       counter++;
-      branchName = `posthog/${taskSlug}/${branchType}/${counter}`;
+      branchName = `posthog/${safeSlug}/${safeType}/${counter}`;
     }
 
     return branchName;
