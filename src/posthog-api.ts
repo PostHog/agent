@@ -1,4 +1,4 @@
-import type { Task, TaskRun, SupportingFile, PostHogAPIConfig, PostHogResource, ResourceType, UrlMention } from './types.js';
+import type { Task, TaskRun, LogEntry, SupportingFile, PostHogAPIConfig, PostHogResource, ResourceType, UrlMention } from './types.js';
 import type { WorkflowDefinition, AgentDefinition } from './workflow-types.js';
 
 interface PostHogApiResponse<T> {
@@ -12,7 +12,7 @@ export interface TaskRunUpdate {
   status?: TaskRun["status"];
   branch?: string | null;
   current_stage?: string | null;
-  log?: string;
+  log?: LogEntry[];
   error_message?: string | null;
   output?: Record<string, unknown> | null;
   state?: Record<string, unknown>;
@@ -196,6 +196,14 @@ export class PostHogAPIClient {
     return this.apiRequest<TaskRun>(`/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/set_output/`, {
       method: 'PATCH',
       body: JSON.stringify({ output }),
+    });
+  }
+
+  async appendTaskRunLog(taskId: string, runId: string, entries: LogEntry[]): Promise<TaskRun> {
+    const teamId = await this.getTeamId();
+    return this.apiRequest<TaskRun>(`/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/append_log/`, {
+      method: 'POST',
+      body: JSON.stringify({ entries }),
     });
   }
 

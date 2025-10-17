@@ -41,10 +41,10 @@ export class TaskProgressReporter {
     try {
       const run = await this.posthogAPI.createTaskRun(taskId, {
         status: 'started',
-        log: '',
+        log: [],
       });
       this.taskRun = run;
-      this.outputLog = run.log ? run.log.split('\n') : [];
+      this.outputLog = [];
       this.logger.debug('Created task run', { taskId, runId: run.id });
     } catch (error) {
       this.logger.warn('Failed to create task run', { taskId, error: (error as Error).message });
@@ -170,27 +170,34 @@ export class TaskProgressReporter {
       return;
     }
 
-    if (logLine) {
-      if (logLine !== this.lastLogEntry) {
-        this.outputLog.push(logLine);
+    // If there's a log line, append it separately using the append_log endpoint
+    if (logLine && logLine !== this.lastLogEntry) {
+      try {
+        await this.posthogAPI.appendTaskRunLog(this.taskId, this.runId, [
+          { type: 'info', message: logLine }
+        ]);
         this.lastLogEntry = logLine;
+      } catch (error) {
+        this.logger.warn('Failed to append log entry', {
+          taskId: this.taskId,
+          runId: this.runId,
+          error: (error as Error).message,
+        });
       }
-      update.log = this.outputLog.join('\n');
     }
 
-    try {
-      const run = await this.posthogAPI.updateTaskRun(this.taskId, this.runId, update);
-      // Sync local cache with server response to avoid drift if server modifies values
-      this.taskRun = run;
-      if (run.log !== undefined && run.log !== null) {
-        this.outputLog = run.log ? run.log.split('\n') : [];
+    // Update other fields if provided
+    if (Object.keys(update).length > 0) {
+      try {
+        const run = await this.posthogAPI.updateTaskRun(this.taskId, this.runId, update);
+        this.taskRun = run;
+      } catch (error) {
+        this.logger.warn('Failed to update task run', {
+          taskId: this.taskId,
+          runId: this.runId,
+          error: (error as Error).message,
+        });
       }
-    } catch (error) {
-      this.logger.warn('Failed to update task run', {
-        taskId: this.taskId,
-        runId: this.runId,
-        error: (error as Error).message,
-      });
     }
   }
 

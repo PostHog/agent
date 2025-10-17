@@ -21,6 +21,13 @@ export interface Task {
   latest_run?: TaskRun;
 }
 
+// Log entry structure for TaskRun.log
+export interface LogEntry {
+  type: string; // e.g., "info", "warning", "error", "success", "debug"
+  message: string;
+  [key: string]: unknown; // Allow additional fields
+}
+
 // TaskRun model - represents individual execution runs of tasks
 export interface TaskRun {
   id: string;
@@ -29,7 +36,7 @@ export interface TaskRun {
   branch: string | null;
   current_stage: string | null; // WorkflowStage ID
   status: 'started' | 'in_progress' | 'completed' | 'failed';
-  log: string;
+  log: LogEntry[]; // Array of log entry objects
   error_message: string | null;
   output: Record<string, unknown> | null; // Structured output (PR URL, commit SHA, etc.)
   state: Record<string, unknown>; // Intermediate run state (defaults to {}, never null)
