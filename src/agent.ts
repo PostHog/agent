@@ -254,12 +254,12 @@ export class Agent {
         const shouldCreateImplBranch = overrides?.createImplementationBranch !== false; // default true
 
         if (isPlanning && shouldCreatePlanningBranch) {
-            const planningBranch = await this.createPlanningBranch(task.id);
+            const planningBranch = await this.createPlanningBranch(task);
             await this.updateTaskBranch(task.id, planningBranch);
             this.emitEvent(this.adapter.createStatusEvent('branch_created', { stage: stage.key, branch: planningBranch }));
             await this.progressReporter.branchCreated(stage.key, planningBranch);
         } else if (!isPlanning && !isManual && shouldCreateImplBranch) {
-            const implBranch = await this.createImplementationBranch(task.id);
+            const implBranch = await this.createImplementationBranch(task);
             await this.updateTaskBranch(task.id, implBranch);
             this.emitEvent(this.adapter.createStatusEvent('branch_created', { stage: stage.key, branch: implBranch }));
             await this.progressReporter.branchCreated(stage.key, implBranch);
@@ -269,7 +269,7 @@ export class Agent {
 
         if (result.plan) {
             await this.writePlan(task.id, result.plan);
-            await this.commitPlan(task.id, task.title);
+            await this.commitPlan(task);
             this.emitEvent(this.adapter.createStatusEvent('commit_made', { stage: stage.key, kind: 'plan' }));
             await this.progressReporter.commitMade(stage.key, 'plan');
         }
@@ -280,16 +280,16 @@ export class Agent {
             if (openPR) {
                 // Ensure we're on an implementation branch for PRs
                 let branchName = await this.gitManager.getCurrentBranch();
-                const onTaskBranch = branchName.includes(`posthog/task-${task.id}`);
+                const onTaskBranch = branchName.includes(`posthog/${task.slug}`);
                 if (!onTaskBranch && (overrides?.createImplementationBranch !== false)) {
-                    const implBranch = await this.createImplementationBranch(task.id);
+                    const implBranch = await this.createImplementationBranch(task);
                     await this.updateTaskBranch(task.id, implBranch);
                     branchName = implBranch;
                     this.emitEvent(this.adapter.createStatusEvent('branch_created', { stage: stage.key, branch: implBranch }));
                     await this.progressReporter.branchCreated(stage.key, implBranch);
                 }
                 try {
-                    const prUrl = await this.createPullRequest(task.id, branchName, task.title, task.description);
+                    const prUrl = await this.createPullRequest(task, branchName);
                     await this.updateTaskBranch(task.id, branchName);
                     await this.attachPullRequestToTask(task.id, prUrl, branchName);
                     this.emitEvent(this.adapter.createStatusEvent('pr_created', { stage: stage.key, prUrl }));
@@ -304,7 +304,7 @@ export class Agent {
         if (result.results) {
             const existingPlan = await this.readPlan(task.id);
             const planSummary = existingPlan ? existingPlan.split('\n')[0] : undefined;
-            await this.commitImplementation(task.id, task.title, planSummary);
+            await this.commitImplementation(task, planSummary);
             this.emitEvent(this.adapter.createStatusEvent('commit_made', { stage: stage.key, kind: 'implementation' }));
             await this.progressReporter.commitMade(stage.key, 'implementation');
         }
@@ -316,7 +316,7 @@ export class Agent {
             if (openPR) {
                 const branchName = await this.gitManager.getCurrentBranch();
                 try {
-                    const prUrl = await this.createPullRequest(task.id, branchName, task.title, task.description);
+                    const prUrl = await this.createPullRequest(task, branchName);
                     await this.updateTaskBranch(task.id, branchName);
                     await this.attachPullRequestToTask(task.id, prUrl, branchName);
                     this.emitEvent(this.adapter.createStatusEvent('pr_created', { stage: stage.key, prUrl }));
@@ -439,43 +439,44 @@ export class Agent {
     }
     
     // Git operations for task workflow
-    async createPlanningBranch(taskId: string): Promise<string> {
-        this.logger.info('Creating planning branch', { taskId });
-        const branchName = await this.gitManager.createTaskPlanningBranch(taskId);
-        this.logger.debug('Planning branch created', { taskId, branchName });
+    async createPlanningBranch(task: Task): Promise<string> {
+        this.logger.info('Creating planning branch', { taskId: task.id, slug: task.slug });
+        const branchName = await this.gitManager.createTaskPlanningBranch(task.slug);
+        this.logger.debug('Planning branch created', { taskId: task.id, slug: task.slug, branchName });
         // Only create gitignore after we're on the new branch
         await this.fileManager.ensureGitignore();
         return branchName;
     }
     
-    async commitPlan(taskId: string, taskTitle: string): Promise<string> {
-        this.logger.info('Committing plan', { taskId, taskTitle });
-        const commitHash = await this.gitManager.commitPlan(taskId, taskTitle);
-        this.logger.debug('Plan committed', { taskId, commitHash });
+    async commitPlan(task: Task): Promise<string> {
+        this.logger.info('Committing plan', { taskId: task.id, slug: task.slug, title: task.title });
+        const commitHash = await this.gitManager.commitPlan(task.slug, task.title);
+        this.logger.debug('Plan committed', { taskId: task.id, slug: task.slug, commitHash });
         return commitHash;
     }
     
-    async createImplementationBranch(taskId: string, planningBranchName?: string): Promise<string> {
-        this.logger.info('Creating implementation branch', { taskId, fromBranch: planningBranchName });
-        const branchName = await this.gitManager.createTaskImplementationBranch(taskId, planningBranchName);
-        this.logger.debug('Implementation branch created', { taskId, branchName });
+    async createImplementationBranch(task: Task, planningBranchName?: string): Promise<string> {
+        this.logger.info('Creating implementation branch', { taskId: task.id, slug: task.slug, fromBranch: planningBranchName });
+        const branchName = await this.gitManager.createTaskImplementationBranch(task.slug, planningBranchName);
+        this.logger.debug('Implementation branch created', { taskId: task.id, slug: task.slug, branchName });
         return branchName;
     }
     
-    async commitImplementation(taskId: string, taskTitle: string, planSummary?: string): Promise<string> {
-        this.logger.info('Committing implementation', { taskId, taskTitle });
-        const commitHash = await this.gitManager.commitImplementation(taskId, taskTitle, planSummary);
-        this.logger.debug('Implementation committed', { taskId, commitHash });
+    async commitImplementation(task: Task, planSummary?: string): Promise<string> {
+        this.logger.info('Committing implementation', { taskId: task.id, slug: task.slug, title: task.title });
+        const commitHash = await this.gitManager.commitImplementation(task.slug, task.title, planSummary);
+        this.logger.debug('Implementation committed', { taskId: task.id, slug: task.slug, commitHash });
         return commitHash;
     }
 
-    async createPullRequest(taskId: string, branchName: string, taskTitle: string, taskDescription: string): Promise<string> {
-        this.logger.info('Creating pull request', { taskId, branchName, taskTitle });
+    async createPullRequest(task: Task, branchName: string): Promise<string> {
+        this.logger.info('Creating pull request', { taskId: task.id, slug: task.slug, branchName, title: task.title });
 
         // Build PR body
         const prBody = `## Task Details
-**Task ID**: ${taskId}
-**Description**: ${taskDescription}
+**Task**: ${task.slug} - ${task.title}
+**Task ID**: ${task.id}
+**Description**: ${task.description}
 
 ## Changes
 This PR implements the changes described in the task.
@@ -484,11 +485,11 @@ Generated by PostHog Agent`;
 
         const prUrl = await this.gitManager.createPullRequest(
             branchName,
-            taskTitle,
+            task.title,
             prBody
         );
 
-        this.logger.info('Pull request created', { taskId, prUrl });
+        this.logger.info('Pull request created', { taskId: task.id, slug: task.slug, prUrl });
         return prUrl;
     }
 

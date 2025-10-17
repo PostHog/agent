@@ -1,6 +1,8 @@
 // PostHog Task model (matches Array's OpenAPI schema)
 export interface Task {
   id: string;
+  task_number: number | null;
+  slug: string;
   title: string;
   description: string;
   origin_product: 'error_tracking' | 'eval_clusters' | 'user_created' | 'support_queue' | 'session_summaries';
