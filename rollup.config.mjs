@@ -15,41 +15,65 @@ const external = [
   'zod'
 ];
 
-export default defineConfig({
-  input: 'index.ts',
-  output: {
-    dir: 'dist',
-    format: 'esm',
-    sourcemap: true,
-    preserveModules: true,
-    preserveModulesRoot: '.',
-    entryFileNames: '[name].js',
-    chunkFileNames: '[name].js'
+export default defineConfig([
+  // ESM build
+  {
+    input: 'index.ts',
+    output: {
+      file: 'dist/index.mjs',
+      format: 'esm',
+      sourcemap: true,
+    },
+    external,
+    plugins: [
+      nodeResolve({
+        extensions: ['.ts', '.js', '.json']
+      }),
+      commonjs(),
+      typescript({
+        tsconfig: path.resolve('tsconfig.rollup.json'),
+        useTsconfigDeclarationDir: true,
+        clean: true,
+        tsconfigOverride: {
+          compilerOptions: {
+            skipLibCheck: true
+          }
+        }
+      }),
+      copy({
+        targets: [
+          {
+            src: 'src/templates/*',
+            dest: 'dist/templates'
+          }
+        ],
+        hook: 'writeBundle'
+      })
+    ]
   },
-  external,
-  plugins: [
-    nodeResolve({
-      extensions: ['.ts', '.js', '.json']
-    }),
-    commonjs(),
-    typescript({
-      tsconfig: path.resolve('tsconfig.rollup.json'),
-      useTsconfigDeclarationDir: true,
-      clean: true,
-      tsconfigOverride: {
-        compilerOptions: {
-          skipLibCheck: true
+  // CJS build
+  {
+    input: 'index.ts',
+    output: {
+      file: 'dist/index.cjs',
+      format: 'cjs',
+      sourcemap: true,
+      exports: 'named',
+    },
+    external,
+    plugins: [
+      nodeResolve({
+        extensions: ['.ts', '.js', '.json']
+      }),
+      commonjs(),
+      typescript({
+        tsconfig: path.resolve('tsconfig.rollup.json'),
+        tsconfigOverride: {
+          compilerOptions: {
+            skipLibCheck: true
+          }
         }
-      }
-    }),
-    copy({
-      targets: [
-        {
-          src: 'src/templates/*',
-          dest: 'dist/templates'
-        }
-      ],
-      hook: 'writeBundle'
-    })
-  ]
-});
+      })
+    ]
+  }
+]);
