@@ -206,6 +206,59 @@ export class PromptBuilder {
     return { description: processedDescription, referencedFiles };
   }
 
+  async buildResearchPrompt(task: Task, repositoryPath?: string): Promise<string> {
+    // Process file references in description
+    const { description: descriptionAfterFiles, referencedFiles } = await this.processFileReferences(
+      task.description,
+      repositoryPath
+    );
+
+    // Process URL references in description  
+    const { description: processedDescription, referencedResources } = await this.processUrlReferences(
+      descriptionAfterFiles
+    );
+
+    let prompt = '';
+    prompt += `## Current Task\n\n**Task**: ${task.title}\n**Description**: ${processedDescription}`;
+
+    if ((task as any).primary_repository) {
+      prompt += `\n**Repository**: ${(task as any).primary_repository}`;
+    }
+
+    // Add referenced files from @ mentions
+    if (referencedFiles.length > 0) {
+      prompt += `\n\n## Referenced Files\n\n`;
+      for (const file of referencedFiles) {
+        prompt += `### ${file.path}\n\`\`\`\n${file.content}\n\`\`\`\n\n`;
+      }
+    }
+
+    // Add referenced resources from URL mentions
+    if (referencedResources.length > 0) {
+      prompt += `\n\n## Referenced Resources\n\n`;
+      for (const resource of referencedResources) {
+        prompt += `### ${resource.title} (${resource.type})\n**URL**: ${resource.url}\n\n${resource.content}\n\n`;
+      }
+    }
+
+    try {
+      const taskFiles = await this.getTaskFiles(task.id);
+      const contextFiles = taskFiles.filter((f: any) => f.type === 'context' || f.type === 'reference');
+      if (contextFiles.length > 0) {
+        prompt += `\n\n## Supporting Files`;
+        for (const file of contextFiles) {
+          prompt += `\n\n### ${file.name} (${file.type})\n${file.content}`;
+        }
+      }
+    } catch (error) {
+      this.logger.debug('No existing task files found for research', { taskId: task.id });
+    }
+
+    prompt += `\n\nPlease explore the codebase thoroughly and generate 3-5 clarifying questions that will help guide the implementation of this task. Use the \`create_plan\` tool to create a research.md artifact with your questions in the markdown format specified in your system prompt.`;
+
+    return prompt;
+  }
+
   async buildPlanningPrompt(task: Task, repositoryPath?: string): Promise<string> {
     // Process file references in description
     const { description: descriptionAfterFiles, referencedFiles } = await this.processFileReferences(

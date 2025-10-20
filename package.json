@@ -1,6 +1,6 @@
 {
   "name": "@posthog/agent",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "description": "TypeScript agent framework wrapping Claude Agent SDK with Git-based workflow for PostHog tasks",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -42,7 +42,7 @@
     "@rollup/plugin-commonjs": "^25.0.7",
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@types/bun": "latest",
-    "@types/minimatch": "^6.0.0",
+    "minimatch": "^10.0.3",
     "rimraf": "^6.0.1",
     "rollup": "^4.24.0",
     "rollup-plugin-copy": "^3.5.0",
@@ -51,7 +51,8 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.1",
-    "dotenv": "^17.2.3"
+    "dotenv": "^17.2.3",
+    "openai": "^6.5.0"
   },
   "files": [
     "dist/**/*",

@@ -10,7 +10,9 @@ const external = [
   ...builtinModules,
   ...builtinModules.map((moduleName) => `node:${moduleName}`),
   '@anthropic-ai/claude-agent-sdk',
-  'dotenv'
+  'dotenv',
+  'openai',
+  'zod'
 ];
 
 export default defineConfig({
@@ -33,7 +35,12 @@ export default defineConfig({
     typescript({
       tsconfig: path.resolve('tsconfig.rollup.json'),
       useTsconfigDeclarationDir: true,
-      clean: true
+      clean: true,
+      tsconfigOverride: {
+        compilerOptions: {
+          skipLibCheck: true
+        }
+      }
     }),
     copy({
       targets: [

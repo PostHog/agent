@@ -1,6 +1,6 @@
 import type { PermissionMode, AgentEvent } from './types.js';
 
-export type AgentType = 'planning' | 'execution' | 'review' | 'testing';
+export type AgentType = 'research' | 'planning' | 'execution' | 'review' | 'testing';
 
 export interface AgentDefinition {
   id: string;

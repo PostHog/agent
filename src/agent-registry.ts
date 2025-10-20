@@ -14,6 +14,12 @@ export class AgentRegistry {
   static getDefaultAgents(): AgentDefinition[] {
     return [
       {
+        id: 'research',
+        name: 'research',
+        agent_type: 'research',
+        description: 'Explore codebase and generate clarifying questions',
+      },
+      {
         id: 'planning',
         name: 'planning',
         agent_type: 'planning',

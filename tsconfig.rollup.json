@@ -6,7 +6,8 @@
     "declaration": false,
     "sourceMap": true,
     "emitDeclarationOnly": false,
-    "allowImportingTsExtensions": false
+    "allowImportingTsExtensions": false,
+    "skipLibCheck": true
   },
   "include": [
     "index.ts",

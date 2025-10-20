@@ -9,6 +9,24 @@ export interface TaskFile {
   type: 'plan' | 'context' | 'reference' | 'output' | 'artifact';
 }
 
+export interface QuestionData {
+  id: string;
+  question: string;
+  options: string[];
+}
+
+export interface AnswerData {
+  questionId: string;
+  selectedOption: string;
+  customInput?: string;
+}
+
+export interface QuestionsFile {
+  questions: QuestionData[];
+  answered: boolean;
+  answers: AnswerData[] | null;
+}
+
 export class PostHogFileManager {
   private repositoryPath: string;
   private logger: Logger;
@@ -150,6 +168,52 @@ export class PostHogFileManager {
 
   async readRequirements(taskId: string): Promise<string | null> {
     return await this.readTaskFile(taskId, 'requirements.md');
+  }
+
+  async writeResearch(taskId: string, content: string): Promise<void> {
+    this.logger.debug('Writing research', {
+      taskId,
+      contentLength: content.length,
+      contentPreview: content.substring(0, 200)
+    });
+
+    await this.writeTaskFile(taskId, {
+      name: 'research.md',
+      content: content,
+      type: 'artifact'
+    });
+
+    this.logger.info('Research file written', { taskId });
+  }
+
+  async readResearch(taskId: string): Promise<string | null> {
+    return await this.readTaskFile(taskId, 'research.md');
+  }
+
+  async writeQuestions(taskId: string, data: QuestionsFile): Promise<void> {
+    this.logger.debug('Writing questions', {
+      taskId,
+      questionCount: data.questions.length,
+      answered: data.answered,
+    });
+
+    await this.writeTaskFile(taskId, {
+      name: 'questions.json',
+      content: JSON.stringify(data, null, 2),
+      type: 'artifact'
+    });
+
+    this.logger.info('Questions file written', { taskId });
+  }
+
+  async readQuestions(taskId: string): Promise<QuestionsFile | null> {
+    try {
+      const content = await this.readTaskFile(taskId, 'questions.json');
+      return content ? JSON.parse(content) as QuestionsFile : null;
+    } catch (error) {
+      this.logger.debug('Failed to parse questions.json', { error });
+      return null;
+    }
   }
 
   async getTaskFiles(taskId: string): Promise<SupportingFile[]> {

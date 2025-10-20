@@ -66,6 +66,14 @@ export interface ExecutionOptions {
   permissionMode?: PermissionMode;
 }
 
+export interface TaskExecutionOptions {
+  repositoryPath?: string;
+  permissionMode?: PermissionMode;
+  isCloudMode?: boolean; // Determines local vs cloud behavior (local pauses after each phase)
+  autoProgress?: boolean;
+  queryOverrides?: Record<string, any>;
+}
+
 // Base event with timestamp
 interface BaseEvent {
   ts: number;
