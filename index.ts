@@ -17,13 +17,6 @@ export type {
     AgentEvent
 } from './src/types.js';
 
-export type {
-  WorkflowDefinition,
-  WorkflowStage,
-  WorkflowExecutionOptions,
-  AgentDefinition
-} from './src/workflow-types.js';
-
 export {
     Logger,
     LogLevel,

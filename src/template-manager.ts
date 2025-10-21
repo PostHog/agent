@@ -17,14 +17,45 @@ export class TemplateManager {
   constructor() {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = dirname(__filename);
+
+    // Exhaustive list of possible template locations
     const candidateDirs = [
-      join(__dirname, 'templates'),
+      // Standard build output (dist/src/template-manager.js -> dist/templates)
       join(__dirname, '..', 'templates'),
+
+      // If preserveModules creates nested structure (dist/src/template-manager.js -> dist/src/templates)
+      join(__dirname, 'templates'),
+
+      // Development scenarios (src/template-manager.ts -> src/templates)
+      join(__dirname, '..', '..', 'src', 'templates'),
+
+      // Package root templates directory
       join(__dirname, '..', '..', 'templates'),
-      join(__dirname, '..', '..', 'src', 'templates')
+
+      // When node_modules symlink or installed (node_modules/@posthog/agent/dist/src/... -> node_modules/@posthog/agent/dist/templates)
+      join(__dirname, '..', '..', 'dist', 'templates'),
+
+      // When consumed from node_modules deep in tree
+      join(__dirname, '..', '..', '..', 'templates'),
+      join(__dirname, '..', '..', '..', 'dist', 'templates'),
+      join(__dirname, '..', '..', '..', 'src', 'templates'),
+
+      // When bundled by Vite/Webpack (e.g., .vite/build/index.js -> node_modules/@posthog/agent/dist/templates)
+      // Try to find node_modules from current location
+      join(__dirname, '..', 'node_modules', '@posthog', 'agent', 'dist', 'templates'),
+      join(__dirname, '..', '..', 'node_modules', '@posthog', 'agent', 'dist', 'templates'),
+      join(__dirname, '..', '..', '..', 'node_modules', '@posthog', 'agent', 'dist', 'templates'),
     ];
 
     const resolvedDir = candidateDirs.find((dir) => existsSync(dir));
+
+    if (!resolvedDir) {
+      console.error('[TemplateManager] Could not find templates directory.');
+      console.error('[TemplateManager] Current file:', __filename);
+      console.error('[TemplateManager] Current dir:', __dirname);
+      console.error('[TemplateManager] Tried:', candidateDirs.map(d => `\n  - ${d} (exists: ${existsSync(d)})`).join(''));
+    }
+
     this.templatesDir = resolvedDir ?? candidateDirs[0];
   }
 
@@ -33,7 +64,7 @@ export class TemplateManager {
       const templatePath = join(this.templatesDir, templateName);
       return await fs.readFile(templatePath, 'utf8');
     } catch (error) {
-      throw new Error(`Failed to load template ${templateName}: ${error}`);
+      throw new Error(`Failed to load template ${templateName} from ${this.templatesDir}: ${error}`);
     }
   }
 
@@ -59,7 +90,6 @@ export class TemplateManager {
       date: variables.date || new Date().toISOString().split('T')[0]
     });
   }
-
 
   async generateCustomFile(templateName: string, variables: TemplateVariables): Promise<string> {
     const template = await this.loadTemplate(templateName);
@@ -147,7 +177,7 @@ These files are:
 Customize \`.posthog/.gitignore\` to control which files are committed:
 - Include plans and documentation by default
 - Exclude temporary files and sensitive data
-- Customize based on your team's workflow
+- Customize based on your team's needs
 
 ---
 

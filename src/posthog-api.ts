@@ -1,5 +1,4 @@
 import type { Task, TaskRun, LogEntry, SupportingFile, PostHogAPIConfig, PostHogResource, ResourceType, UrlMention } from './types.js';
-import type { WorkflowDefinition, AgentDefinition } from './workflow-types.js';
 
 interface PostHogApiResponse<T> {
   results?: T[];
@@ -107,8 +106,6 @@ export class PostHogAPIClient {
     repository?: string;
     organization?: string;
     origin_product?: string;
-    workflow?: string;
-    current_stage?: string;
   }): Promise<Task[]> {
     const teamId = await this.getTeamId();
     const url = new URL(`${this.baseUrl}/api/projects/${teamId}/tasks/`);
@@ -171,26 +168,6 @@ export class PostHogAPIClient {
     });
   }
 
-  async updateTaskRunStage(taskId: string, runId: string, stageId: string): Promise<TaskRun> {
-    const teamId = await this.getTeamId();
-    return this.apiRequest<TaskRun>(`/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/update_stage/`, {
-      method: 'PATCH',
-      body: JSON.stringify({ current_stage: stageId }),
-    });
-  }
-
-  async progressTaskRun(taskId: string, runId: string, nextStageId?: string): Promise<TaskRun> {
-    const teamId = await this.getTeamId();
-    const payload: Record<string, string> = {};
-    if (nextStageId) {
-      payload.next_stage_id = nextStageId;
-    }
-    return this.apiRequest<TaskRun>(`/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/progress_run/`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  }
-
   async setTaskRunOutput(taskId: string, runId: string, output: Record<string, unknown>): Promise<TaskRun> {
     const teamId = await this.getTeamId();
     return this.apiRequest<TaskRun>(`/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/set_output/`, {
@@ -205,23 +182,6 @@ export class PostHogAPIClient {
       method: 'POST',
       body: JSON.stringify({ entries }),
     });
-  }
-
-  // Workflow endpoints
-  async fetchWorkflow(workflowId: string): Promise<WorkflowDefinition> {
-    const teamId = await this.getTeamId();
-    return this.apiRequest<WorkflowDefinition>(`/api/projects/${teamId}/workflows/${workflowId}/`);
-  }
-
-  async listWorkflows(): Promise<WorkflowDefinition[]> {
-    const teamId = await this.getTeamId();
-    const response = await this.apiRequest<PostHogApiResponse<WorkflowDefinition>>(`/api/projects/${teamId}/workflows/`);
-    return response.results || [];
-  }
-
-  // Agent catalog exposure
-  async listAgents(): Promise<AgentDefinition[]> {
-    return this.apiRequest<AgentDefinition[]>(`/api/agents/`);
   }
 
   /**

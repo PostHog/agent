@@ -19,7 +19,7 @@ export interface ProviderAdapter {
 
   /**
    * Create a standardized status event.
-   * Used for workflow stage transitions and other status updates.
+   * Used for task phase transitions and other status updates.
    */
   createStatusEvent(phase: string, additionalData?: any): StatusEvent;
 

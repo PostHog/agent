@@ -161,7 +161,7 @@ export class GitManager {
     await this.runGitCommand(`push ${forceFlag} -u origin ${branchName}`);
   }
 
-  // Utility methods for PostHog task workflow
+  // Utility methods for PostHog task execution
   async createTaskPlanningBranch(taskId: string, baseBranch?: string): Promise<string> {
     let branchName = `posthog/task-${taskId}-planning`;
     let counter = 1;
