@@ -39,6 +39,12 @@ export class TemplateManager {
       join(__dirname, '..', '..', '..', 'templates'),
       join(__dirname, '..', '..', '..', 'dist', 'templates'),
       join(__dirname, '..', '..', '..', 'src', 'templates'),
+
+      // When bundled by Vite/Webpack (e.g., .vite/build/index.js -> node_modules/@posthog/agent/dist/templates)
+      // Try to find node_modules from current location
+      join(__dirname, '..', 'node_modules', '@posthog', 'agent', 'dist', 'templates'),
+      join(__dirname, '..', '..', 'node_modules', '@posthog', 'agent', 'dist', 'templates'),
+      join(__dirname, '..', '..', '..', 'node_modules', '@posthog', 'agent', 'dist', 'templates'),
     ];
 
     const resolvedDir = candidateDirs.find((dir) => existsSync(dir));
