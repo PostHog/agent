@@ -51,45 +51,13 @@ export class TaskProgressReporter {
     }
   }
 
-  async stageStarted(stageKey: string, stageIndex: number): Promise<void> {
-    await this.update({
-      status: 'in_progress',
-    }, `Stage started: ${stageKey}`);
-  }
-
-  async stageCompleted(stageKey: string, completedStages: number): Promise<void> {
-    await this.update({
-      status: 'in_progress',
-    }, `Stage completed: ${stageKey}`);
-  }
-
-  async branchCreated(stageKey: string, branchName: string): Promise<void> {
-    await this.appendLog(`Branch created (${stageKey}): ${branchName}`);
-  }
-
-  async commitMade(stageKey: string, kind: 'plan' | 'implementation'): Promise<void> {
-    await this.appendLog(`Commit made (${stageKey}, ${kind})`);
-  }
-
-  async pullRequestCreated(stageKey: string, prUrl: string): Promise<void> {
-    await this.appendLog(`Pull request created (${stageKey}): ${prUrl}`);
-  }
-
-  async noNextStage(stageKey?: string): Promise<void> {
-    await this.appendLog(
-      stageKey
-        ? `No next stage available after '${stageKey}'. Execution halted.`
-        : 'No next stage available. Execution halted.'
-    );
-  }
-
   async complete(): Promise<void> {
-    await this.update({ status: 'completed' }, 'Workflow execution completed');
+    await this.update({ status: 'completed' }, 'Task execution completed');
   }
 
   async fail(error: Error | string): Promise<void> {
     const message = typeof error === 'string' ? error : error.message;
-    await this.update({ status: 'failed', error_message: message }, `Workflow execution failed: ${message}`);
+    await this.update({ status: 'failed', error_message: message }, `Task execution failed: ${message}`);
   }
 
   async appendLog(line: string): Promise<void> {

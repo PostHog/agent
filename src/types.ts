@@ -5,7 +5,6 @@ export interface Task {
   description: string;
   origin_product: 'error_tracking' | 'eval_clusters' | 'user_created' | 'support_queue' | 'session_summaries';
   position?: number;
-  workflow?: string | null;
   github_integration?: number | null;
   repository_config?: unknown; // JSONField
   repository_list: string;
@@ -34,7 +33,6 @@ export interface TaskRun {
   task: string; // Task ID
   team: number;
   branch: string | null;
-  current_stage: string | null; // WorkflowStage ID
   status: 'started' | 'in_progress' | 'completed' | 'failed';
   log: LogEntry[]; // Array of log entry objects
   error_message: string | null;
@@ -51,8 +49,6 @@ export interface SupportingFile {
   type: 'plan' | 'context' | 'reference' | 'output';
   created_at: string;
 }
-
-// Removed legacy ExecutionMode in favor of configurable workflows
 
 export enum PermissionMode {
   PLAN = "plan",
@@ -155,11 +151,9 @@ export interface StatusEvent extends BaseEvent {
   type: 'status';
   phase: string;
   // Common optional fields (varies by phase):
-  stage?: string;           // Workflow stage (plan, code, complete)
   kind?: string;            // Kind of status (plan, implementation)
   branch?: string;          // Git branch name
   prUrl?: string;           // Pull request URL
-  workflowId?: string;      // Workflow identifier
   taskId?: string;          // Task identifier
   messageId?: string;       // Claude message ID
   model?: string;           // Model name
@@ -271,7 +265,6 @@ export interface TaskExecutionResult {
   task: Task;
   plan?: string;
   executionResult?: ExecutionResult;
-  // Deprecated: mode removed in workflow-based execution
 }
 
 // MCP Server configuration types (re-exported from Claude SDK for convenience)

@@ -1,6 +1,6 @@
 # PostHog Agent SDK
 
-TypeScript agent framework that wraps the Claude Agent SDK for PostHog's Array desktop app. Features a Git-based workflow that stores task artifacts alongside your code.
+TypeScript agent framework that wraps the Claude Agent SDK for PostHog's Array desktop app. Features a Git-based task execution system that stores task artifacts alongside your code.
 
 ## Quick Start
 
@@ -11,9 +11,9 @@ bun run example
 
 ## Key Features
 
-- **Git-Based Workflow**: Plans and artifacts stored in `.posthog/` folders and committed to Git
+- **Git-Based Task Execution**: Plans and artifacts stored in `.posthog/` folders and committed to Git
 - **PostHog Integration**: Fetches existing tasks from PostHog API
-- **Configurable Workflows**: Execute tasks via PostHog-defined or local workflows
+- **3-Phase Execution**: Research → Plan → Build with automatic progression
 - **Branch Management**: Automatic branch creation for planning and implementation
 - **Progress Tracking**: Execution status stored in PostHog `TaskRun` records for easy polling
 
@@ -35,12 +35,14 @@ const agent = new Agent({
     },
 });
 
-// Run by workflow
+// Run a task
 const taskId = "task_abc123";
-const workflowId = "workflow_123";
-await agent.runWorkflow(taskId, workflowId, {
+const task = await agent.getPostHogClient()?.fetchTask(taskId);
+
+await agent.runTask(task, {
   repositoryPath: "/path/to/repo",
   permissionMode: PermissionMode.ACCEPT_EDITS,
+  isCloudMode: false,
   autoProgress: true,
 });
 ```
@@ -54,32 +56,13 @@ const agent = new Agent({
 });
 ```
 
-## Workflow
+## Task Execution
 
-Each task execution creates Git branches:
+Each task execution creates Git branches and follows a 3-phase approach:
 
-1. **Planning**: `posthog/task-{id}-planning` - Contains plan in `.posthog/{id}/plan.md`
-2. **Implementation**: `posthog/task-{id}-implementation` - Contains code changes
-
-## Manual Stages and Resume
-
-- Manual stages (no agent, or `is_manual_only`) are stop-points: the SDK will not auto-advance.
-- On manual stages, a PR is opened by default for human review (configurable per stage with `openPullRequest`).
-
-Resume from the current stage:
-
-```typescript
-await agent.runWorkflow(taskId, workflowId, {
-  repositoryPath: "/path/to/repo",
-  permissionMode: PermissionMode.ACCEPT_EDITS,
-  resumeFromCurrentStage: true,
-  autoProgress: true, // ignored on manual stages
-});
-
-// Or explicitly progress via API then resume
-await agent.progressToNextStage(taskId);
-await agent.runWorkflow(taskId, workflowId, { resumeFromCurrentStage: true });
-```
+1. **Research Phase**: Analyzes the codebase and may generate clarifying questions
+2. **Planning Phase**: Creates an implementation plan in `.posthog/{id}/plan.md` on branch `posthog/task-{id}-planning`
+3. **Build Phase**: Implements code changes on branch `posthog/task-{id}-implementation`
 
 ## File System
 
@@ -90,6 +73,7 @@ your-repo/
 │   ├── .gitignore
 │   └── {task-id}/
 │       ├── plan.md
+│       ├── questions.json (if research phase generated questions)
 │       └── context.md (optional)
 └── (your code)
 ```
@@ -111,12 +95,12 @@ const poller = setInterval(async () => {
     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   )[0];
   if (latestRun) {
-    renderProgress(latestRun.status, latestRun.log, latestRun.current_stage);
+    renderProgress(latestRun.status, latestRun.log);
   }
 }, 3000);
 
 try {
-  await agent.runWorkflow(taskId, workflowId, { repositoryPath: repoPath });
+  await agent.runTask(task, { repositoryPath: repoPath });
 } finally {
   clearInterval(poller);
 }
@@ -141,46 +125,23 @@ function handleLiveEvent(event: AgentEvent) {
 ## Requirements
 
 - Bun runtime
-- Git repository 
+- Git repository
 - PostHog API access
 - Claude API access via `@anthropic-ai/claude-agent-sdk`
 
+## Configuration Options
 
-## Stage overrides and query overrides
-
-You can customize behavior per workflow stage using `stageOverrides`, and pass low-level model options using `queryOverrides`.
+You can customize behavior using `TaskExecutionOptions`:
 
 ```ts
-await agent.runWorkflow(taskId, workflowId, {
+await agent.runTask(task, {
   repositoryPath: "/path/to/repo",
-  // Global defaults for this run
-  permissionMode: PermissionMode.ACCEPT_EDITS,
-  queryOverrides: { model: 'claude-3-7-sonnet' },
-
-  // Per-stage overrides (keys must match your workflow's stage keys)
-  stageOverrides: {
-    plan: {
-      permissionMode: PermissionMode.PLAN,
-      createPlanningBranch: true,
-      // Only applied during the planning stage
-      queryOverrides: { temperature: 0.2 }
-    },
-    build: {
-      createImplementationBranch: true,
-      openPullRequest: false,
-      // Inject custom MCP servers or any other query option
-      queryOverrides: {
-        mcpServers: {
-          // example: override or add servers
-        }
-      }
-    },
-    complete: {
-      // ensure a PR is opened at the end regardless of edits
-      openPullRequest: true
-    }
+  permissionMode: PermissionMode.ACCEPT_EDITS, // or PLAN, DEFAULT, BYPASS
+  isCloudMode: false, // local execution with pauses between phases
+  autoProgress: true, // automatically progress through phases
+  queryOverrides: {
+    model: 'claude-sonnet-4-5-20250929',
+    temperature: 0.7
   }
 });
 ```
-
-Precedence for query options: base defaults in the SDK < global `queryOverrides` < per-stage `stageOverrides[stageKey].queryOverrides`.

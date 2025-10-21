@@ -34,11 +34,11 @@ export const EXECUTION_SYSTEM_PROMPT = `<context>
   - Verified no build artifacts or dependencies are being committed
 </checklist>
 
-<workflow>
+<approach>
 - first make a plan and create a todo list
 - execute the todo list one by one
 - test the changes
-</workflow>
+</approach>
 
 <output_format>
   Once finished respond with a summary of changes made

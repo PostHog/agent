@@ -1,6 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Task, ExecutionResult, PlanResult, AgentConfig } from './types.js';
-import type { WorkflowDefinition, WorkflowStage, WorkflowExecutionOptions } from './workflow-types.js';
 import { TaskManager } from './task-manager.js';
 import { PostHogAPIClient } from './posthog-api.js';
 import { PostHogFileManager } from './file-manager.js';
@@ -11,9 +10,6 @@ import type { ProviderAdapter } from './adapters/types.js';
 import { PLANNING_SYSTEM_PROMPT } from './agents/planning.js';
 import { EXECUTION_SYSTEM_PROMPT } from './agents/execution.js';
 import { Logger } from './utils/logger.js';
-import { AgentRegistry } from './agent-registry.js';
-import { WorkflowRegistry } from './workflow-registry.js';
-import { StageExecutor } from './stage-executor.js';
 import { PromptBuilder } from './prompt-builder.js';
 import { TaskProgressReporter } from './task-progress-reporter.js';
 import { OpenAIExtractor, type ExtractedQuestion, type ExtractedQuestionWithAnswer } from './structured-extraction.js';
@@ -28,9 +24,6 @@ export class Agent {
     private templateManager: TemplateManager;
     private adapter: ProviderAdapter;
     private logger: Logger;
-    private agentRegistry: AgentRegistry;
-    private workflowRegistry: WorkflowRegistry;
-    private stageExecutor: StageExecutor;
     private progressReporter: TaskProgressReporter;
     private promptBuilder: PromptBuilder;
     private extractor?: OpenAIExtractor;
@@ -81,7 +74,6 @@ export class Agent {
             // TODO: Add author config from environment or config
         });
         this.templateManager = new TemplateManager();
-        this.agentRegistry = new AgentRegistry();
 
         if (config.posthogApiUrl && config.posthogApiKey) {
             this.posthogAPI = new PostHogAPIClient({
@@ -90,21 +82,12 @@ export class Agent {
             });
         }
 
-        this.workflowRegistry = new WorkflowRegistry(this.posthogAPI);
         this.promptBuilder = new PromptBuilder({
             getTaskFiles: (taskId: string) => this.getTaskFiles(taskId),
             generatePlanTemplate: (vars) => this.templateManager.generatePlan(vars),
             posthogClient: this.posthogAPI,
             logger: this.logger.child('PromptBuilder')
         });
-        this.stageExecutor = new StageExecutor(
-            this.agentRegistry,
-            this.logger,
-            this.promptBuilder,
-            undefined, // eventHandler set via setEventHandler below
-            this.mcpServers
-        );
-        this.stageExecutor.setEventHandler((event) => this.emitEvent(event));
         this.progressReporter = new TaskProgressReporter(this.posthogAPI, this.logger);
         
         // Initialize OpenAI extractor if API key is available
@@ -147,196 +130,7 @@ export class Agent {
         }
     }
 
-    // Workflow-based execution
-    async runWorkflow(taskOrId: Task | string, workflowId: string, options: WorkflowExecutionOptions = {}): Promise<{ task: Task; workflow: WorkflowDefinition }> {
-        await this._configureLlmGateway();
-
-        const task = typeof taskOrId === 'string' ? await this.fetchTask(taskOrId) : taskOrId;
-        await this.workflowRegistry.loadWorkflows();
-        const workflow = this.workflowRegistry.getWorkflow(workflowId);
-        if (!workflow) {
-            throw new Error(`Workflow ${workflowId} not found`);
-        }
-        const orderedStages = [...workflow.stages].sort((a, b) => a.position - b.position);
-
-        // Ensure task is assigned to workflow and positioned at first stage
-        if (this.posthogAPI) {
-            try {
-                if ((task.workflow as any) !== workflowId) {
-                    await this.posthogAPI.updateTask(task.id, { workflow: workflowId } as any);
-                    (task as any).workflow = workflowId;
-                }
-            } catch (e) {
-                this.logger.warn('Failed to sync task workflow before execution', { error: (e as Error).message });
-            }
-        }
-
-        const executionId = this.taskManager.generateExecutionId();
-        this.logger.info('Starting workflow execution', { taskId: task.id, workflowId, executionId });
-        this.taskManager.startExecution(task.id, 'plan_and_build', executionId);
-        await this.progressReporter.start(task.id, {
-            totalSteps: orderedStages.length,
-        });
-
-        // Set initial stage on the newly created run
-        const firstStage = orderedStages[0];
-        if (this.posthogAPI && this.progressReporter.runId && firstStage) {
-            try {
-                await this.posthogAPI.updateTaskRun(task.id, this.progressReporter.runId, {
-                    current_stage: firstStage.id
-                });
-            } catch (e) {
-                this.logger.warn('Failed to set initial stage on run', { error: (e as Error).message });
-            }
-        }
-
-        try {
-            let startIndex = 0;
-            const currentStageId = (task as any).current_stage as string | undefined;
-
-            // If task is already at the last stage, fail gracefully without progressing
-            if (currentStageId) {
-                const currIdx = orderedStages.findIndex(s => s.id === currentStageId);
-                const atLastStage = currIdx >= 0 && currIdx === orderedStages.length - 1;
-                if (atLastStage) {
-                    const finalStageKey = orderedStages[currIdx]?.key;
-                    this.emitEvent(this.adapter.createStatusEvent('no_next_stage', { stage: finalStageKey }));
-                    await this.progressReporter.noNextStage(finalStageKey);
-                    await this.progressReporter.complete();
-                    this.taskManager.completeExecution(executionId, { task, workflow });
-                    return { task, workflow };
-                }
-            }
-
-            if (options.resumeFromCurrentStage && currentStageId) {
-                const idx = orderedStages.findIndex(s => s.id === currentStageId);
-                if (idx >= 0) startIndex = idx;
-            }
-
-            // Align server-side stage when restarting from a different stage
-            if (this.posthogAPI && this.progressReporter.runId) {
-                const targetStage = orderedStages[startIndex];
-                if (targetStage && targetStage.id !== currentStageId) {
-                    try {
-                        await this.posthogAPI.updateTaskRun(task.id, this.progressReporter.runId, {
-                            current_stage: targetStage.id
-                        });
-                    } catch (e) {
-                        this.logger.warn('Failed to update run stage', { error: (e as Error).message });
-                    }
-                }
-            }
-
-            for (let i = startIndex; i < orderedStages.length; i++) {
-                const stage = orderedStages[i];
-                await this.progressReporter.stageStarted(stage.key, i);
-                await this.executeStage(task, stage, options);
-                await this.progressReporter.stageCompleted(stage.key, i + 1);
-                if (options.autoProgress) {
-                    const hasNext = i < orderedStages.length - 1;
-                    if (hasNext) {
-                        await this.progressToNextStage(task.id, stage.key);
-                    }
-                }
-            }
-            await this.progressReporter.complete();
-            this.taskManager.completeExecution(executionId, { task, workflow });
-            return { task, workflow };
-        } catch (error) {
-            await this.progressReporter.fail(error as Error);
-            this.taskManager.failExecution(executionId, error as Error);
-            throw error;
-        }
-    }
-
-    async executeStage(task: Task, stage: WorkflowStage, options: WorkflowExecutionOptions = {}): Promise<void> {
-        this.emitEvent(this.adapter.createStatusEvent('stage_start', { stage: stage.key }));
-        const overrides = options.stageOverrides?.[stage.key];
-        const agentName = stage.agent_name || 'code_generation';
-        const agentDef = this.agentRegistry.getAgent(agentName);
-        const isManual = stage.is_manual_only === true;
-        const stageKeyLower = (stage.key || '').toLowerCase().trim();
-        const isPlanningByKey = stageKeyLower === 'plan' || stageKeyLower.includes('plan');
-        const isPlanning = !isManual && ((agentDef?.agent_type === 'planning') || isPlanningByKey);
-        const shouldCreatePlanningBranch = overrides?.createPlanningBranch !== false; // default true
-        const shouldCreateImplBranch = overrides?.createImplementationBranch !== false; // default true
-
-        if (isPlanning && shouldCreatePlanningBranch) {
-            const planningBranch = await this.createPlanningBranch(task.id);
-            await this.updateTaskBranch(task.id, planningBranch);
-            this.emitEvent(this.adapter.createStatusEvent('branch_created', { stage: stage.key, branch: planningBranch }));
-            await this.progressReporter.branchCreated(stage.key, planningBranch);
-        } else if (!isPlanning && !isManual && shouldCreateImplBranch) {
-            const implBranch = await this.createImplementationBranch(task.id);
-            await this.updateTaskBranch(task.id, implBranch);
-            this.emitEvent(this.adapter.createStatusEvent('branch_created', { stage: stage.key, branch: implBranch }));
-            await this.progressReporter.branchCreated(stage.key, implBranch);
-        }
-
-        const result = await this.stageExecutor.execute(task, stage, options);
-
-        if (result.plan) {
-            await this.writePlan(task.id, result.plan);
-            await this.commitPlan(task.id, task.title);
-            this.emitEvent(this.adapter.createStatusEvent('commit_made', { stage: stage.key, kind: 'plan' }));
-            await this.progressReporter.commitMade(stage.key, 'plan');
-        }
-
-        if (isManual) {
-            const defaultOpenPR = true; // manual stages default to PR for review
-            const openPR = overrides?.openPullRequest ?? defaultOpenPR;
-            if (openPR) {
-                // Ensure we're on an implementation branch for PRs
-                let branchName = await this.gitManager.getCurrentBranch();
-                const onTaskBranch = branchName.includes(`posthog/task-${task.id}`);
-                if (!onTaskBranch && (overrides?.createImplementationBranch !== false)) {
-                    const implBranch = await this.createImplementationBranch(task.id);
-                    await this.updateTaskBranch(task.id, implBranch);
-                    branchName = implBranch;
-                    this.emitEvent(this.adapter.createStatusEvent('branch_created', { stage: stage.key, branch: implBranch }));
-                    await this.progressReporter.branchCreated(stage.key, implBranch);
-                }
-                try {
-                    const prUrl = await this.createPullRequest(task.id, branchName, task.title, task.description);
-                    await this.updateTaskBranch(task.id, branchName);
-                    await this.attachPullRequestToTask(task.id, prUrl, branchName);
-                    this.emitEvent(this.adapter.createStatusEvent('pr_created', { stage: stage.key, prUrl }));
-                    await this.progressReporter.pullRequestCreated(stage.key, prUrl);
-                } catch {}
-            }
-            // Do not auto-progress on manual stages
-            this.emitEvent(this.adapter.createStatusEvent('stage_complete', { stage: stage.key }));
-            return;
-        }
-
-        if (result.results) {
-            const existingPlan = await this.readPlan(task.id);
-            const planSummary = existingPlan ? existingPlan.split('\n')[0] : undefined;
-            await this.commitImplementation(task.id, task.title, planSummary);
-            this.emitEvent(this.adapter.createStatusEvent('commit_made', { stage: stage.key, kind: 'implementation' }));
-            await this.progressReporter.commitMade(stage.key, 'implementation');
-        }
-
-        // PR creation on complete stage (or if explicitly requested), regardless of whether edits occurred
-        {
-            const defaultOpenPR = stage.key.toLowerCase().includes('complete');
-            const openPR = overrides?.openPullRequest ?? defaultOpenPR;
-            if (openPR) {
-                const branchName = await this.gitManager.getCurrentBranch();
-                try {
-                    const prUrl = await this.createPullRequest(task.id, branchName, task.title, task.description);
-                    await this.updateTaskBranch(task.id, branchName);
-                    await this.attachPullRequestToTask(task.id, prUrl, branchName);
-                    this.emitEvent(this.adapter.createStatusEvent('pr_created', { stage: stage.key, prUrl }));
-                    await this.progressReporter.pullRequestCreated(stage.key, prUrl);
-                } catch {}
-            }
-        }
-
-        this.emitEvent(this.adapter.createStatusEvent('stage_complete', { stage: stage.key }));
-    }
-
-    // Adaptive task execution - 3-phase workflow (research → plan → build)
+    // Adaptive task execution - 3 phases (research → plan → build)
     async runTask(taskOrId: Task | string, options: import('./types.js').TaskExecutionOptions = {}): Promise<void> {
         await this._configureLlmGateway();
 
@@ -671,28 +465,6 @@ export class Agent {
         this.emitEvent(this.adapter.createStatusEvent('task_complete', { taskId: task.id }));
     }
 
-    async progressToNextStage(taskId: string, currentStageKey?: string): Promise<void> {
-        if (!this.posthogAPI || !this.progressReporter.runId) {
-            throw new Error('PostHog API not configured or no active run. Cannot progress stage.');
-        }
-        try {
-            await this.posthogAPI.progressTaskRun(taskId, this.progressReporter.runId);
-        } catch (error) {
-            if (error instanceof Error && error.message.includes('No next stage available')) {
-                this.logger.warn('No next stage available when attempting to progress run', {
-                    taskId,
-                    runId: this.progressReporter.runId,
-                    stage: currentStageKey,
-                    error: error.message,
-                });
-                this.emitEvent(this.adapter.createStatusEvent('no_next_stage', { stage: currentStageKey }));
-                await this.progressReporter.noNextStage(currentStageKey);
-                return;
-            }
-            throw error;
-        }
-    }
-
     // Direct prompt execution - still supported for low-level usage
     async run(prompt: string, options: { repositoryPath?: string; permissionMode?: import('./types.js').PermissionMode; queryOverrides?: Record<string, any> } = {}): Promise<ExecutionResult> {
         await this._configureLlmGateway();
@@ -744,8 +516,6 @@ export class Agent {
         repository?: string;
         organization?: string;
         origin_product?: string;
-        workflow?: string;
-        current_stage?: string;
     }): Promise<Task[]> {
         if (!this.posthogAPI) {
             throw new Error('PostHog API not configured. Provide posthogApiUrl and posthogApiKey in constructor.');
@@ -799,8 +569,8 @@ export class Agent {
             return await this.extractor.extractQuestions(researchContent);
         }
     }
-    
-    // Git operations for task workflow
+
+    // Git operations for task execution
     async createPlanningBranch(taskId: string): Promise<string> {
         this.logger.info('Creating planning branch', { taskId });
         const branchName = await this.gitManager.createTaskPlanningBranch(taskId);
@@ -925,4 +695,3 @@ Generated by PostHog Agent`;
 
 export { PermissionMode } from './types.js';
 export type { Task, SupportingFile, ExecutionResult, AgentConfig } from './types.js';
-export type { WorkflowDefinition, WorkflowStage, WorkflowExecutionOptions } from './workflow-types.js';

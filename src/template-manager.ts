@@ -147,7 +147,7 @@ These files are:
 Customize \`.posthog/.gitignore\` to control which files are committed:
 - Include plans and documentation by default
 - Exclude temporary files and sensitive data
-- Customize based on your team's workflow
+- Customize based on your team's needs
 
 ---
 
