@@ -1,5 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { Task, ExecutionResult, PlanResult, AgentConfig } from './types.js';
+import type { Task, ExecutionResult, AgentConfig } from './types.js';
 import { TaskManager } from './task-manager.js';
 import { PostHogAPIClient } from './posthog-api.js';
 import { PostHogFileManager } from './file-manager.js';
@@ -7,12 +7,12 @@ import { GitManager } from './git-manager.js';
 import { TemplateManager } from './template-manager.js';
 import { ClaudeAdapter } from './adapters/claude/claude-adapter.js';
 import type { ProviderAdapter } from './adapters/types.js';
-import { PLANNING_SYSTEM_PROMPT } from './agents/planning.js';
-import { EXECUTION_SYSTEM_PROMPT } from './agents/execution.js';
 import { Logger } from './utils/logger.js';
 import { PromptBuilder } from './prompt-builder.js';
 import { TaskProgressReporter } from './task-progress-reporter.js';
-import { OpenAIExtractor, type ExtractedQuestion, type ExtractedQuestionWithAnswer } from './structured-extraction.js';
+import { AISDKExtractor, type StructuredExtractor, type ExtractedQuestion, type ExtractedQuestionWithAnswer } from './structured-extraction.js';
+import { TASK_WORKFLOW } from './workflow/config.js';
+import type { WorkflowRuntime } from './workflow/types.js';
 
 export class Agent {
     private workingDirectory: string;
@@ -26,7 +26,7 @@ export class Agent {
     private logger: Logger;
     private progressReporter: TaskProgressReporter;
     private promptBuilder: PromptBuilder;
-    private extractor?: OpenAIExtractor;
+    private extractor?: StructuredExtractor;
     private mcpServers?: Record<string, any>;
     public debug: boolean;
 
@@ -89,11 +89,7 @@ export class Agent {
             logger: this.logger.child('PromptBuilder')
         });
         this.progressReporter = new TaskProgressReporter(this.posthogAPI, this.logger);
-        
-        // Initialize OpenAI extractor if API key is available
-        if (process.env.OPENAI_API_KEY) {
-            this.extractor = new OpenAIExtractor(this.logger.child('OpenAIExtractor'));
-        }
+        this.extractor = new AISDKExtractor(this.logger.child('AISDKExtractor'));
     }
 
     /**
@@ -113,6 +109,7 @@ export class Agent {
         }
 
         if (process.env.ANTHROPIC_BASE_URL && process.env.ANTHROPIC_AUTH_TOKEN) {
+            this.ensureOpenAIGatewayEnv();
             return;
         }
 
@@ -122,6 +119,7 @@ export class Agent {
 
             process.env.ANTHROPIC_BASE_URL = gatewayUrl;
             process.env.ANTHROPIC_AUTH_TOKEN = apiKey;
+            this.ensureOpenAIGatewayEnv(gatewayUrl, apiKey);
 
             this.logger.debug('Configured LLM gateway', { gatewayUrl });
         } catch (error) {
@@ -130,7 +128,7 @@ export class Agent {
         }
     }
 
-    // Adaptive task execution - 3 phases (research → plan → build)
+    // Adaptive task execution orchestrated via workflow steps
     async runTask(taskOrId: Task | string, options: import('./types.js').TaskExecutionOptions = {}): Promise<void> {
         await this._configureLlmGateway();
 
@@ -142,324 +140,41 @@ export class Agent {
         this.logger.info('Starting adaptive task execution', { taskId: task.id, taskSlug, isCloudMode });
 
         // Initialize progress reporter for task run tracking (needed for PR attachment)
-        await this.progressReporter.start(task.id, { totalSteps: 3 }); // 3 phases: research, plan, build
+        await this.progressReporter.start(task.id, { totalSteps: TASK_WORKFLOW.length });
         this.emitEvent(this.adapter.createStatusEvent('run_started', { runId: this.progressReporter.runId }));
 
-        // Phase 1: Branch check
-        const existingBranch = await this.gitManager.getTaskBranch(taskSlug);
-        if (!existingBranch) {
-            this.logger.info('Creating task branch', { taskSlug });
-            const branchName = `posthog/task-${taskSlug}`;
-            await this.gitManager.createOrSwitchToBranch(branchName);
-            this.emitEvent(this.adapter.createStatusEvent('branch_created', { branch: branchName }));
-            
-            // Initial commit
-            await this.fileManager.ensureGitignore();
-            await this.gitManager.addAllPostHogFiles();
-            if (isCloudMode) {
-                await this.gitManager.commitAndPush(`Initialize task ${taskSlug}`, { allowEmpty: true });
-            } else {
-                await this.gitManager.commitChanges(`Initialize task ${taskSlug}`);
-            }
-        } else {
-            this.logger.info('Switching to existing task branch', { branch: existingBranch });
-            await this.gitManager.switchToBranch(existingBranch);
-        }
+        await this.prepareTaskBranch(taskSlug, isCloudMode);
 
-        // Phase 2: Research
-        const researchExists = await this.fileManager.readResearch(task.id);
-        if (!researchExists) {
-            this.logger.info('Starting research phase', { taskId: task.id });
-            this.emitEvent(this.adapter.createStatusEvent('phase_start', { phase: 'research' }));
-            
-            // Run research agent
-            const researchPrompt = await this.promptBuilder.buildResearchPrompt(task, cwd);
-            const { RESEARCH_SYSTEM_PROMPT } = await import('./agents/research.js');
-            const fullPrompt = RESEARCH_SYSTEM_PROMPT + '\n\n' + researchPrompt;
-            
-            const baseOptions: Record<string, any> = {
-                model: 'claude-sonnet-4-5-20250929',
-                cwd,
-                permissionMode: 'plan',
-                settingSources: ['local'],
-                mcpServers: this.mcpServers,
-            };
+        const workflowContext: WorkflowRuntime = {
+            task,
+            taskSlug,
+            cwd,
+            isCloudMode,
+            options,
+            logger: this.logger,
+            fileManager: this.fileManager,
+            gitManager: this.gitManager,
+            promptBuilder: this.promptBuilder,
+            progressReporter: this.progressReporter,
+            adapter: this.adapter,
+            mcpServers: this.mcpServers,
+            posthogAPI: this.posthogAPI,
+            extractor: this.extractor,
+            emitEvent: (event: any) => this.emitEvent(event),
+            stepResults: {},
+        };
 
-            const response = query({
-                prompt: fullPrompt,
-                options: { ...baseOptions, ...(options.queryOverrides || {}) },
-            });
-
-            let researchContent = '';
-            for await (const message of response) {
-                this.emitEvent(this.adapter.createRawSDKEvent(message));
-                const transformed = this.adapter.transform(message);
-                if (transformed) {
-                    this.emitEvent(transformed);
-                }
-                if (message.type === 'assistant' && message.message?.content) {
-                    for (const c of message.message.content) {
-                        if (c.type === 'text' && c.text) researchContent += c.text + '\n';
-                    }
-                }
-            }
-
-            // Write research.md
-            if (researchContent.trim()) {
-                await this.fileManager.writeResearch(task.id, researchContent.trim());
-                this.logger.info('Research completed', { taskId: task.id });
-            }
-
-            // Commit research
-            await this.gitManager.addAllPostHogFiles();
-            
-            // Extract questions using structured output and save to questions.json
-            if (this.extractor) {
-                try {
-                    this.logger.info('Extracting questions from research.md', { taskId: task.id });
-                    const questions = await this.extractQuestionsFromResearch(task.id, false);
-                    
-                    this.logger.info('Questions extracted successfully', { taskId: task.id, count: questions.length });
-                    
-                    // Save questions.json
-                    await this.fileManager.writeQuestions(task.id, {
-                        questions,
-                        answered: false,
-                        answers: null,
-                    });
-                    
-                    this.logger.info('Questions saved to questions.json', { taskId: task.id });
-                    
-                    // Emit event for Array to pick up (local mode)
-                    if (!isCloudMode) {
-                        this.emitEvent({
-                            type: 'artifact',
-                            ts: Date.now(),
-                            kind: 'research_questions',
-                            content: questions,
-                        });
-                        this.logger.info('Emitted research_questions artifact event', { taskId: task.id });
-                    }
-                } catch (error) {
-                    this.logger.error('Failed to extract questions', { error: error instanceof Error ? error.message : String(error) });
-                    this.emitEvent({
-                        type: 'error',
-                        ts: Date.now(),
-                        message: `Failed to extract questions: ${error instanceof Error ? error.message : String(error)}`,
-                    });
-                }
-            } else {
-                this.logger.warn('OpenAI extractor not available (OPENAI_API_KEY not set), skipping question extraction');
-                this.emitEvent({
-                    type: 'status',
-                    ts: Date.now(),
-                    phase: 'extraction_skipped',
-                    message: 'Question extraction skipped - OPENAI_API_KEY not configured',
-                });
-            }
-            
-            if (isCloudMode) {
-                await this.gitManager.commitAndPush(`Research phase for ${task.title}`);
-            } else {
-                await this.gitManager.commitChanges(`Research phase for ${task.title}`);
-                this.emitEvent(this.adapter.createStatusEvent('phase_complete', { phase: 'research' }));
-                return; // Local mode: return to user
+        for (const step of TASK_WORKFLOW) {
+            const result = await step.run({ step, context: workflowContext });
+            if (result.halt) {
+                return;
             }
         }
 
-        // Phase 3: Auto-answer questions (cloud mode only)
         if (isCloudMode) {
-            const questionsData = await this.fileManager.readQuestions(task.id);
-            if (questionsData && !questionsData.answered) {
-                this.logger.info('Auto-answering research questions', { taskId: task.id });
-                
-                // Extract questions with recommended answers using structured output
-                if (this.extractor) {
-                    const questionsWithAnswers = await this.extractQuestionsFromResearch(task.id, true) as ExtractedQuestionWithAnswer[];
-                    
-                    // Save answers to questions.json
-                    await this.fileManager.writeQuestions(task.id, {
-                        questions: questionsWithAnswers.map(qa => ({
-                            id: qa.id,
-                            question: qa.question,
-                            options: qa.options,
-                        })),
-                        answered: true,
-                        answers: questionsWithAnswers.map(qa => ({
-                            questionId: qa.id,
-                            selectedOption: qa.recommendedAnswer,
-                            customInput: qa.justification,
-                        })),
-                    });
-                    
-                    this.logger.info('Auto-answers saved to questions.json', { taskId: task.id });
-                    await this.gitManager.addAllPostHogFiles();
-                    await this.gitManager.commitAndPush(`Answer research questions for ${task.title}`);
-                } else {
-                    this.logger.warn('OpenAI extractor not available, skipping auto-answer');
-                }
-            }
+            await this.ensurePullRequest(task, workflowContext.stepResults);
         }
 
-        // Phase 4: Plan
-        const planExists = await this.readPlan(task.id);
-        if (!planExists) {
-            // Check if questions have been answered
-            const questionsData = await this.fileManager.readQuestions(task.id);
-            if (!questionsData || !questionsData.answered) {
-                this.logger.info('Waiting for user answers to research questions');
-                this.emitEvent(this.adapter.createStatusEvent('phase_complete', { phase: 'research_questions' }));
-                return; // Wait for user to answer questions
-            }
-
-            this.logger.info('Starting planning phase', { taskId: task.id });
-            this.emitEvent(this.adapter.createStatusEvent('phase_start', { phase: 'planning' }));
-            
-            // Build context with research + questions + answers
-            const research = await this.fileManager.readResearch(task.id);
-            let researchContext = '';
-            if (research) {
-                researchContext += `## Research Analysis\n\n${research}\n\n`;
-            }
-            
-            // Add questions and answers
-            researchContext += `## Implementation Decisions\n\n`;
-            const answers = questionsData.answers || [];
-            for (const question of questionsData.questions) {
-                const answer = answers.find((a: any) => a.questionId === question.id);
-                
-                researchContext += `### ${question.question}\n\n`;
-                if (answer) {
-                    researchContext += `**Selected:** ${answer.selectedOption}\n`;
-                    if (answer.customInput) {
-                        researchContext += `**Details:** ${answer.customInput}\n`;
-                    }
-                } else {
-                    this.logger.warn('No answer found for question', { questionId: question.id });
-                    researchContext += `**Selected:** Not answered\n`;
-                }
-                researchContext += '\n';
-            }
-            
-            // Run planning agent with full context
-            const planningPrompt = await this.promptBuilder.buildPlanningPrompt(task, cwd);
-            const { PLANNING_SYSTEM_PROMPT } = await import('./agents/planning.js');
-            const fullPrompt = PLANNING_SYSTEM_PROMPT + '\n\n' + planningPrompt + '\n\n' + researchContext;
-            
-            const baseOptions: Record<string, any> = {
-                model: 'claude-sonnet-4-5-20250929',
-                cwd,
-                permissionMode: 'plan',
-                settingSources: ['local'],
-                mcpServers: this.mcpServers,
-            };
-
-            const response = query({
-                prompt: fullPrompt,
-                options: { ...baseOptions, ...(options.queryOverrides || {}) },
-            });
-
-            let planContent = '';
-            for await (const message of response) {
-                this.emitEvent(this.adapter.createRawSDKEvent(message));
-                const transformed = this.adapter.transform(message);
-                if (transformed) {
-                    this.emitEvent(transformed);
-                }
-                if (message.type === 'assistant' && message.message?.content) {
-                    for (const c of message.message.content) {
-                        if (c.type === 'text' && c.text) planContent += c.text + '\n';
-                    }
-                }
-            }
-
-            // Write plan.md
-            if (planContent.trim()) {
-                await this.writePlan(task.id, planContent.trim());
-                this.logger.info('Plan completed', { taskId: task.id });
-            }
-
-            // Commit plan
-            await this.gitManager.addAllPostHogFiles();
-            if (isCloudMode) {
-                await this.gitManager.commitAndPush(`Planning phase for ${task.title}`);
-            } else {
-                await this.gitManager.commitChanges(`Planning phase for ${task.title}`);
-                this.emitEvent(this.adapter.createStatusEvent('phase_complete', { phase: 'planning' }));
-                return; // Local mode: return to user
-            }
-        }
-
-        // Phase 5: Build
-        const latestRun = task.latest_run;
-        const prExists = latestRun?.output && (latestRun.output as any).pr_url;
-        
-        if (!prExists) {
-            this.logger.info('Starting build phase', { taskId: task.id });
-            this.emitEvent(this.adapter.createStatusEvent('phase_start', { phase: 'build' }));
-            
-            // Run execution agent
-            const executionPrompt = await this.promptBuilder.buildExecutionPrompt(task, cwd);
-            const { EXECUTION_SYSTEM_PROMPT } = await import('./agents/execution.js');
-            const fullPrompt = EXECUTION_SYSTEM_PROMPT + '\n\n' + executionPrompt;
-            
-            const { PermissionMode } = await import('./types.js');
-            const permissionMode = options.permissionMode || PermissionMode.ACCEPT_EDITS;
-            const baseOptions: Record<string, any> = {
-                model: 'claude-sonnet-4-5-20250929',
-                cwd,
-                permissionMode,
-                settingSources: ['local'],
-                mcpServers: this.mcpServers,
-            };
-
-            const response = query({
-                prompt: fullPrompt,
-                options: { ...baseOptions, ...(options.queryOverrides || {}) },
-            });
-
-            for await (const message of response) {
-                this.emitEvent(this.adapter.createRawSDKEvent(message));
-                const transformed = this.adapter.transform(message);
-                if (transformed) {
-                    this.emitEvent(transformed);
-                }
-            }
-
-            // Commit and push implementation
-            // Stage ALL changes (not just .posthog/)
-            const hasChanges = await this.gitManager.hasChanges();
-            if (hasChanges) {
-                await this.gitManager.addFiles(['.']); // Stage all changes
-                await this.gitManager.commitChanges(`Implementation for ${task.title}`);
-                
-                // Push to origin
-                const branchName = await this.gitManager.getCurrentBranch();
-                await this.gitManager.pushBranch(branchName);
-                
-                this.logger.info('Implementation committed and pushed', { taskId: task.id });
-            } else {
-                this.logger.warn('No changes to commit in build phase', { taskId: task.id });
-            }
-
-            // Create PR
-            const branchName = await this.gitManager.getCurrentBranch();
-            const prUrl = await this.createPullRequest(task.id, branchName, task.title, task.description);
-            this.logger.info('Pull request created', { taskId: task.id, prUrl });
-            this.emitEvent(this.adapter.createStatusEvent('pr_created', { prUrl }));
-            
-            // Attach PR to task run
-            try {
-                await this.attachPullRequestToTask(task.id, prUrl, branchName);
-                this.logger.info('PR attached to task successfully', { taskId: task.id, prUrl });
-            } catch (error) {
-                this.logger.warn('Could not attach PR to task', { error: error instanceof Error ? error.message : String(error) });
-            }
-        } else {
-            this.logger.info('PR already exists, skipping build phase', { taskId: task.id });
-        }
-
-        // Phase 6: Complete
         await this.progressReporter.complete();
         this.logger.info('Task execution complete', { taskId: task.id });
         this.emitEvent(this.adapter.createStatusEvent('task_complete', { taskId: task.id }));
@@ -555,7 +270,7 @@ export class Agent {
         this.logger.info('Extracting questions from research.md', { taskId, includeAnswers });
         
         if (!this.extractor) {
-            throw new Error('OpenAI extractor not initialized. Set OPENAI_API_KEY environment variable.');
+            throw new Error('OpenAI extractor not initialized. Ensure the LLM gateway is configured.');
         }
 
         const researchContent = await this.fileManager.readResearch(taskId);
@@ -676,6 +391,82 @@ Generated by PostHog Agent`;
             }
         }
         return null;
+    }
+
+    private async prepareTaskBranch(taskSlug: string, isCloudMode: boolean): Promise<void> {
+        const existingBranch = await this.gitManager.getTaskBranch(taskSlug);
+        if (!existingBranch) {
+            this.logger.info('Creating task branch', { taskSlug });
+            const branchName = `posthog/task-${taskSlug}`;
+            await this.gitManager.createOrSwitchToBranch(branchName);
+            this.emitEvent(this.adapter.createStatusEvent('branch_created', { branch: branchName }));
+
+            await this.fileManager.ensureGitignore();
+            await this.gitManager.addAllPostHogFiles();
+            if (isCloudMode) {
+                await this.gitManager.commitAndPush(`Initialize task ${taskSlug}`, { allowEmpty: true });
+            } else {
+                await this.gitManager.commitChanges(`Initialize task ${taskSlug}`);
+            }
+        } else {
+            this.logger.info('Switching to existing task branch', { branch: existingBranch });
+            await this.gitManager.switchToBranch(existingBranch);
+        }
+    }
+
+    private ensureOpenAIGatewayEnv(baseUrl?: string, token?: string): void {
+        const resolvedBaseUrl = baseUrl || process.env.ANTHROPIC_BASE_URL;
+        const resolvedToken = token || process.env.ANTHROPIC_AUTH_TOKEN;
+
+        if (resolvedBaseUrl) {
+            process.env.OPENAI_BASE_URL = resolvedBaseUrl;
+        }
+
+        if (resolvedToken) {
+            process.env.OPENAI_API_KEY = resolvedToken;
+        }
+
+        if (!this.extractor) {
+            this.extractor = new AISDKExtractor(this.logger.child('AISDKExtractor'));
+        }
+    }
+
+    private async ensurePullRequest(task: Task, stepResults: Record<string, any>): Promise<void> {
+        const latestRun = task.latest_run;
+        const existingPr =
+            latestRun?.output && typeof latestRun.output === 'object'
+                ? (latestRun.output as any).pr_url
+                : null;
+
+        if (existingPr) {
+            this.logger.info('PR already exists, skipping creation', { taskId: task.id, prUrl: existingPr });
+            return;
+        }
+
+        const buildResult = stepResults['build'];
+        if (!buildResult?.commitCreated) {
+            this.logger.warn('Build step did not produce a commit; skipping PR creation', { taskId: task.id });
+            return;
+        }
+
+        const branchName = await this.gitManager.getCurrentBranch();
+        const prUrl = await this.createPullRequest(
+            task.id,
+            branchName,
+            task.title,
+            task.description ?? ''
+        );
+
+        this.emitEvent(this.adapter.createStatusEvent('pr_created', { prUrl }));
+
+        try {
+            await this.attachPullRequestToTask(task.id, prUrl, branchName);
+            this.logger.info('PR attached to task successfully', { taskId: task.id, prUrl });
+        } catch (error) {
+            this.logger.warn('Could not attach PR to task', {
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
     }
 
     private emitEvent(event: any): void {
