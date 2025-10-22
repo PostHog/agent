@@ -18,7 +18,7 @@ export async function finalizeStepGitActions(
         return false;
     }
 
-    const { gitManager, logger, isCloudMode } = context;
+    const { gitManager, logger } = context;
     const hasStagedChanges = await gitManager.hasStagedChanges();
 
     if (!hasStagedChanges && !options.allowEmptyCommit) {
@@ -41,15 +41,9 @@ export async function finalizeStepGitActions(
     }
 
     if (step.push) {
-        if (isCloudMode) {
-            const branchName = await gitManager.getCurrentBranch();
-            await gitManager.pushBranch(branchName);
-            logger.info('Pushed branch after step', { stepId: step.id, branch: branchName });
-        } else {
-            logger.debug('Push requested but running in local mode, skipping remote push', {
-                stepId: step.id,
-            });
-        }
+        const branchName = await gitManager.getCurrentBranch();
+        await gitManager.pushBranch(branchName);
+        logger.info('Pushed branch after step', { stepId: step.id, branch: branchName });
     }
 
     return true;
