@@ -254,8 +254,6 @@ export class PromptBuilder {
       this.logger.debug('No existing task files found for research', { taskId: task.id });
     }
 
-    prompt += `\n\nPlease explore the codebase thoroughly and generate 3-5 clarifying questions that will help guide the implementation of this task. Use the \`create_plan\` tool to create a research.md artifact with your questions in the markdown format specified in your system prompt.`;
-
     return prompt;
   }
 

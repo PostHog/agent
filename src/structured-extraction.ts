@@ -1,4 +1,6 @@
-import OpenAI from 'openai';
+import { generateObject } from 'ai';
+import { anthropic } from '@ai-sdk/anthropic';
+import { z } from 'zod';
 import { Logger } from './utils/logger.js';
 
 export interface ExtractedQuestion {
@@ -12,73 +14,54 @@ export interface ExtractedQuestionWithAnswer extends ExtractedQuestion {
   justification: string;
 }
 
-const questionsOnlySchema = {
-  type: 'object',
-  properties: {
-    questions: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          question: { type: 'string' },
-          options: {
-            type: 'array',
-            items: { type: 'string' }
-          }
-        },
-        required: ['id', 'question', 'options'],
-        additionalProperties: false
-      }
-    }
-  },
-  required: ['questions'],
-  additionalProperties: false
-};
+const questionsOnlySchema = z.object({
+  questions: z.array(
+    z.object({
+      id: z.string(),
+      question: z.string(),
+      options: z.array(z.string()),
+    })
+  ),
+});
 
-const questionsWithAnswersSchema = {
-  type: 'object',
-  properties: {
-    questions: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          question: { type: 'string' },
-          options: {
-            type: 'array',
-            items: { type: 'string' }
-          },
-          recommendedAnswer: { type: 'string' },
-          justification: { type: 'string' }
-        },
-        required: ['id', 'question', 'options', 'recommendedAnswer', 'justification'],
-        additionalProperties: false
-      }
-    }
-  },
-  required: ['questions'],
-  additionalProperties: false
-};
+const questionsWithAnswersSchema = z.object({
+  questions: z.array(
+    z.object({
+      id: z.string(),
+      question: z.string(),
+      options: z.array(z.string()),
+      recommendedAnswer: z.string().describe('The letter of the recommended option (e.g., "a", "b", "c")'),
+      justification: z.string().describe('Brief explanation for the recommended answer'),
+    })
+  ),
+});
 
 export interface StructuredExtractor {
   extractQuestions(researchContent: string): Promise<ExtractedQuestion[]>;
   extractQuestionsWithAnswers(researchContent: string): Promise<ExtractedQuestionWithAnswer[]>;
 }
 
-export class OpenAIExtractor implements StructuredExtractor {
-  private client: OpenAI;
+export class AISDKExtractor implements StructuredExtractor {
   private logger: Logger;
+  private model: any;
 
   constructor(logger?: Logger) {
-    const apiKey = process.env.OPENAI_API_KEY;
+    this.logger = logger || new Logger({ debug: false, prefix: '[AISDKExtractor]' });
+
+    // Determine which provider to use based on environment variables
+    // Priority: Anthropic (if ANTHROPIC_BASE_URL is set) > OpenAI
+    const apiKey = process.env.ANTHROPIC_AUTH_TOKEN
+      || process.env.ANTHROPIC_API_KEY
+      || process.env.OPENAI_API_KEY;
+
     if (!apiKey) {
-      throw new Error('OPENAI_API_KEY environment variable is required for structured extraction');
+      throw new Error('Missing API key for structured extraction. Ensure the LLM gateway is configured.');
     }
-    
-    this.client = new OpenAI({ apiKey });
-    this.logger = logger || new Logger({ debug: false, prefix: '[OpenAIExtractor]' });
+
+    const baseURL = process.env.ANTHROPIC_BASE_URL || process.env.OPENAI_BASE_URL;
+    const modelName = 'claude-haiku-4-5';
+    this.model = anthropic(modelName);
+    this.logger.debug('Using Anthropic provider for structured extraction', { modelName, baseURL });
   }
 
   async extractQuestions(researchContent: string): Promise<ExtractedQuestion[]> {
@@ -86,40 +69,20 @@ export class OpenAIExtractor implements StructuredExtractor {
       contentLength: researchContent.length,
     });
 
-    const completion = await this.client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: 'Extract the research questions from the provided markdown. Return a JSON object matching the schema.',
-        },
-        {
-          role: 'user',
-          content: researchContent,
-        },
-      ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: 'questions',
-          strict: true,
-          schema: questionsOnlySchema,
-        },
-      },
+    const { object } = await generateObject({
+      model: this.model,
+      schema: questionsOnlySchema,
+      schemaName: 'ResearchQuestions',
+      schemaDescription: 'Research questions extracted from markdown content',
+      system: 'Extract the research questions from the provided markdown. Return a JSON object matching the schema.',
+      prompt: researchContent,
     });
 
-    const content = completion.choices[0].message.content;
-    if (!content) {
-      throw new Error('No content in OpenAI response');
-    }
-
-    const parsed = JSON.parse(content) as { questions: ExtractedQuestion[] };
-    
     this.logger.info('Successfully extracted questions', {
-      questionCount: parsed.questions.length,
+      questionCount: object.questions.length,
     });
 
-    return parsed.questions;
+    return object.questions;
   }
 
   async extractQuestionsWithAnswers(
@@ -129,39 +92,19 @@ export class OpenAIExtractor implements StructuredExtractor {
       contentLength: researchContent.length,
     });
 
-    const completion = await this.client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: 'Extract the research questions from the markdown and provide recommended answers based on the analysis. For each question, include a recommendedAnswer (the letter: a, b, c, etc.) and a brief justification. Return a JSON object matching the schema.',
-        },
-        {
-          role: 'user',
-          content: researchContent,
-        },
-      ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: 'questions_with_answers',
-          strict: true,
-          schema: questionsWithAnswersSchema,
-        },
-      },
+    const { object } = await generateObject({
+      model: this.model,
+      schema: questionsWithAnswersSchema,
+      schemaName: 'ResearchQuestionsWithAnswers',
+      schemaDescription: 'Research questions with recommended answers extracted from markdown',
+      system: 'Extract the research questions from the markdown and provide recommended answers based on the analysis. For each question, include a recommendedAnswer (the letter: a, b, c, etc.) and a brief justification. Return a JSON object matching the schema.',
+      prompt: researchContent,
     });
 
-    const content = completion.choices[0].message.content;
-    if (!content) {
-      throw new Error('No content in OpenAI response');
-    }
-
-    const parsed = JSON.parse(content) as { questions: ExtractedQuestionWithAnswer[] };
-    
     this.logger.info('Successfully extracted questions with answers', {
-      questionCount: parsed.questions.length,
+      questionCount: object.questions.length,
     });
 
-    return parsed.questions;
+    return object.questions;
   }
 }

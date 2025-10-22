@@ -1,0 +1,42 @@
+import type { WorkflowDefinition } from './types.js';
+import { researchStep } from './steps/research.js';
+import { planStep } from './steps/plan.js';
+import { buildStep } from './steps/build.js';
+
+const MODELS = {
+    SONNET: "claude-sonnet-4-5",
+    HAIKU: "claude-haiku-4-5",
+}
+
+export const TASK_WORKFLOW: WorkflowDefinition = [
+    {
+        id: 'research',
+        name: 'Research',
+        agent: 'research',
+        model: MODELS.HAIKU,
+        permissionMode: 'plan',
+        commit: true,
+        push: true,
+        run: researchStep,
+    },
+    {
+        id: 'plan',
+        name: 'Plan',
+        agent: 'planning',
+        model: MODELS.SONNET,
+        permissionMode: 'plan',
+        commit: true,
+        push: true,
+        run: planStep,
+    },
+    {
+        id: 'build',
+        name: 'Build',
+        agent: 'execution',
+        model: MODELS.SONNET,
+        permissionMode: 'acceptEdits',
+        commit: true,
+        push: true,
+        run: buildStep,
+    },
+];
