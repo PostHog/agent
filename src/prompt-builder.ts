@@ -213,42 +213,50 @@ export class PromptBuilder {
       repositoryPath
     );
 
-    // Process URL references in description  
+    // Process URL references in description
     const { description: processedDescription, referencedResources } = await this.processUrlReferences(
       descriptionAfterFiles
     );
 
-    let prompt = '';
-    prompt += `## Current Task\n\n**Task**: ${task.title}\n**Description**: ${processedDescription}`;
+    let prompt = '<task>\n';
+    prompt += `<title>${task.title}</title>\n`;
+    prompt += `<description>${processedDescription}</description>\n`;
 
     if ((task as any).primary_repository) {
-      prompt += `\n**Repository**: ${(task as any).primary_repository}`;
+      prompt += `<repository>${(task as any).primary_repository}</repository>\n`;
     }
+    prompt += '</task>\n';
 
     // Add referenced files from @ mentions
     if (referencedFiles.length > 0) {
-      prompt += `\n\n## Referenced Files\n\n`;
+      prompt += '\n<referenced_files>\n';
       for (const file of referencedFiles) {
-        prompt += `### ${file.path}\n\`\`\`\n${file.content}\n\`\`\`\n\n`;
+        prompt += `<file path="${file.path}">\n\`\`\`\n${file.content}\n\`\`\`\n</file>\n`;
       }
+      prompt += '</referenced_files>\n';
     }
 
     // Add referenced resources from URL mentions
     if (referencedResources.length > 0) {
-      prompt += `\n\n## Referenced Resources\n\n`;
+      prompt += '\n<referenced_resources>\n';
       for (const resource of referencedResources) {
-        prompt += `### ${resource.title} (${resource.type})\n**URL**: ${resource.url}\n\n${resource.content}\n\n`;
+        prompt += `<resource type="${resource.type}" url="${resource.url}">\n`;
+        prompt += `<title>${resource.title}</title>\n`;
+        prompt += `<content>${resource.content}</content>\n`;
+        prompt += '</resource>\n';
       }
+      prompt += '</referenced_resources>\n';
     }
 
     try {
       const taskFiles = await this.getTaskFiles(task.id);
       const contextFiles = taskFiles.filter((f: any) => f.type === 'context' || f.type === 'reference');
       if (contextFiles.length > 0) {
-        prompt += `\n\n## Supporting Files`;
+        prompt += '\n<supporting_files>\n';
         for (const file of contextFiles) {
-          prompt += `\n\n### ${file.name} (${file.type})\n${file.content}`;
+          prompt += `<file name="${file.name}" type="${file.type}">\n${file.content}\n</file>\n`;
         }
+        prompt += '</supporting_files>\n';
       }
     } catch (error) {
       this.logger.debug('No existing task files found for research', { taskId: task.id });
@@ -264,42 +272,50 @@ export class PromptBuilder {
       repositoryPath
     );
 
-    // Process URL references in description  
+    // Process URL references in description
     const { description: processedDescription, referencedResources } = await this.processUrlReferences(
       descriptionAfterFiles
     );
 
-    let prompt = '';
-    prompt += `## Current Task\n\n**Task**: ${task.title}\n**Description**: ${processedDescription}`;
+    let prompt = '<task>\n';
+    prompt += `<title>${task.title}</title>\n`;
+    prompt += `<description>${processedDescription}</description>\n`;
 
     if ((task as any).primary_repository) {
-      prompt += `\n**Repository**: ${(task as any).primary_repository}`;
+      prompt += `<repository>${(task as any).primary_repository}</repository>\n`;
     }
+    prompt += '</task>\n';
 
     // Add referenced files from @ mentions
     if (referencedFiles.length > 0) {
-      prompt += `\n\n## Referenced Files\n\n`;
+      prompt += '\n<referenced_files>\n';
       for (const file of referencedFiles) {
-        prompt += `### ${file.path}\n\`\`\`\n${file.content}\n\`\`\`\n\n`;
+        prompt += `<file path="${file.path}">\n\`\`\`\n${file.content}\n\`\`\`\n</file>\n`;
       }
+      prompt += '</referenced_files>\n';
     }
 
     // Add referenced resources from URL mentions
     if (referencedResources.length > 0) {
-      prompt += `\n\n## Referenced Resources\n\n`;
+      prompt += '\n<referenced_resources>\n';
       for (const resource of referencedResources) {
-        prompt += `### ${resource.title} (${resource.type})\n**URL**: ${resource.url}\n\n${resource.content}\n\n`;
+        prompt += `<resource type="${resource.type}" url="${resource.url}">\n`;
+        prompt += `<title>${resource.title}</title>\n`;
+        prompt += `<content>${resource.content}</content>\n`;
+        prompt += '</resource>\n';
       }
+      prompt += '</referenced_resources>\n';
     }
 
     try {
       const taskFiles = await this.getTaskFiles(task.id);
       const contextFiles = taskFiles.filter((f: any) => f.type === 'context' || f.type === 'reference');
       if (contextFiles.length > 0) {
-        prompt += `\n\n## Supporting Files`;
+        prompt += '\n<supporting_files>\n';
         for (const file of contextFiles) {
-          prompt += `\n\n### ${file.name} (${file.type})\n${file.content}`;
+          prompt += `<file name="${file.name}" type="${file.type}">\n${file.content}\n</file>\n`;
         }
+        prompt += '</supporting_files>\n';
       }
     } catch (error) {
       this.logger.debug('No existing task files found for planning', { taskId: task.id });
@@ -315,7 +331,12 @@ export class PromptBuilder {
 
     const planTemplate = await this.generatePlanTemplate(templateVariables);
 
-    prompt += `\n\nPlease analyze the codebase and create a detailed implementation plan for this task. Use the following template structure for your plan:\n\n${planTemplate}\n\nFill in each section with specific, actionable information based on your analysis. Replace all placeholder content with actual details about this task.`;
+    prompt += '\n<instructions>\n';
+    prompt += 'Analyze the codebase and create a detailed implementation plan. Use the template structure below, filling each section with specific, actionable information.\n';
+    prompt += '</instructions>\n\n';
+    prompt += '<plan_template>\n';
+    prompt += planTemplate;
+    prompt += '\n</plan_template>';
 
     return prompt;
   }
@@ -327,56 +348,71 @@ export class PromptBuilder {
       repositoryPath
     );
 
-    // Process URL references in description  
+    // Process URL references in description
     const { description: processedDescription, referencedResources } = await this.processUrlReferences(
       descriptionAfterFiles
     );
 
-    let prompt = '';
-    prompt += `## Current Task\n\n**Task**: ${task.title}\n**Description**: ${processedDescription}`;
+    let prompt = '<task>\n';
+    prompt += `<title>${task.title}</title>\n`;
+    prompt += `<description>${processedDescription}</description>\n`;
 
     if ((task as any).primary_repository) {
-      prompt += `\n**Repository**: ${(task as any).primary_repository}`;
+      prompt += `<repository>${(task as any).primary_repository}</repository>\n`;
     }
+    prompt += '</task>\n';
 
     // Add referenced files from @ mentions
     if (referencedFiles.length > 0) {
-      prompt += `\n\n## Referenced Files\n\n`;
+      prompt += '\n<referenced_files>\n';
       for (const file of referencedFiles) {
-        prompt += `### ${file.path}\n\`\`\`\n${file.content}\n\`\`\`\n\n`;
+        prompt += `<file path="${file.path}">\n\`\`\`\n${file.content}\n\`\`\`\n</file>\n`;
       }
+      prompt += '</referenced_files>\n';
     }
 
     // Add referenced resources from URL mentions
     if (referencedResources.length > 0) {
-      prompt += `\n\n## Referenced Resources\n\n`;
+      prompt += '\n<referenced_resources>\n';
       for (const resource of referencedResources) {
-        prompt += `### ${resource.title} (${resource.type})\n**URL**: ${resource.url}\n\n${resource.content}\n\n`;
+        prompt += `<resource type="${resource.type}" url="${resource.url}">\n`;
+        prompt += `<title>${resource.title}</title>\n`;
+        prompt += `<content>${resource.content}</content>\n`;
+        prompt += '</resource>\n';
       }
+      prompt += '</referenced_resources>\n';
     }
 
     try {
       const taskFiles = await this.getTaskFiles(task.id);
       const hasPlan = taskFiles.some((f: any) => f.type === 'plan');
+
       if (taskFiles.length > 0) {
-        prompt += `\n\n## Context and Supporting Information`;
+        prompt += '\n<context>\n';
         for (const file of taskFiles) {
           if (file.type === 'plan') {
-            prompt += `\n\n### Execution Plan\n${file.content}`;
+            prompt += `<plan>\n${file.content}\n</plan>\n`;
           } else {
-            prompt += `\n\n### ${file.name} (${file.type})\n${file.content}`;
+            prompt += `<file name="${file.name}" type="${file.type}">\n${file.content}\n</file>\n`;
           }
         }
+        prompt += '</context>\n';
       }
+
+      prompt += '\n<instructions>\n';
       if (hasPlan) {
-        prompt += `\n\nPlease implement the changes described in the execution plan above. Follow the plan step-by-step and make the necessary file modifications. You must actually edit files and make changes - do not just analyze or review.`;
+        prompt += 'Implement the changes described in the execution plan. Follow the plan step-by-step and make the necessary file modifications.\n';
       } else {
-        prompt += `\n\nPlease implement the changes described in the task above. You must actually edit files and make changes - do not just analyze or review.`;
+        prompt += 'Implement the changes described in the task. Make the necessary file modifications to complete the task.\n';
       }
+      prompt += '</instructions>';
     } catch (error) {
       this.logger.debug('No supporting files found for execution', { taskId: task.id });
-      prompt += `\n\nPlease implement the changes described in the task above.`;
+      prompt += '\n<instructions>\n';
+      prompt += 'Implement the changes described in the task.\n';
+      prompt += '</instructions>';
     }
+
     return prompt;
   }
 }
