@@ -1,5 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { Task, ExecutionResult, AgentConfig } from './types.js';
+import type { Task, ExecutionResult, AgentConfig, CanUseTool } from './types.js';
 import { TaskManager } from './task-manager.js';
 import { PostHogAPIClient } from './posthog-api.js';
 import { PostHogFileManager } from './file-manager.js';
@@ -28,11 +28,13 @@ export class Agent {
     private promptBuilder: PromptBuilder;
     private extractor?: StructuredExtractor;
     private mcpServers?: Record<string, any>;
+    private canUseTool?: CanUseTool;
     public debug: boolean;
 
     constructor(config: AgentConfig = {}) {
         this.workingDirectory = config.workingDirectory || process.cwd();
         this.onEvent = config.onEvent;
+        this.canUseTool = config.canUseTool;
         this.debug = config.debug || false;
 
         // Build default PostHog MCP server configuration
@@ -181,7 +183,7 @@ export class Agent {
     }
 
     // Direct prompt execution - still supported for low-level usage
-    async run(prompt: string, options: { repositoryPath?: string; permissionMode?: import('./types.js').PermissionMode; queryOverrides?: Record<string, any> } = {}): Promise<ExecutionResult> {
+    async run(prompt: string, options: { repositoryPath?: string; permissionMode?: import('./types.js').PermissionMode; queryOverrides?: Record<string, any>; canUseTool?: CanUseTool } = {}): Promise<ExecutionResult> {
         await this._configureLlmGateway();
         const baseOptions: Record<string, any> = {
             model: "claude-sonnet-4-5-20250929",
@@ -190,6 +192,12 @@ export class Agent {
             settingSources: ["local"],
             mcpServers: this.mcpServers,
         };
+
+        // Add canUseTool hook if provided (options take precedence over instance config)
+        const canUseTool = options.canUseTool || this.canUseTool;
+        if (canUseTool) {
+            baseOptions.canUseTool = canUseTool;
+        }
 
         const response = query({
             prompt,

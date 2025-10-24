@@ -1,3 +1,8 @@
+
+// import and export to keep a single type file
+import type { CanUseTool, PermissionResult } from '@anthropic-ai/claude-agent-sdk/sdkTypes.js';
+export type { CanUseTool, PermissionResult };
+
 // PostHog Task model (matches Array's OpenAPI schema)
 export interface Task {
   id: string;
@@ -68,6 +73,9 @@ export interface TaskExecutionOptions {
   isCloudMode?: boolean; // Determines local vs cloud behavior (local pauses after each phase)
   autoProgress?: boolean;
   queryOverrides?: Record<string, any>;
+  // Fine-grained permission control (only applied to build phase)
+  // See: https://docs.claude.com/en/api/agent-sdk/permissions
+  canUseTool?: CanUseTool;
 }
 
 // Base event with timestamp
@@ -305,6 +313,10 @@ export interface AgentConfig {
 
   // Logging configuration
   debug?: boolean;
+
+  // Fine-grained permission control for direct run() calls
+  // See: https://docs.claude.com/en/api/agent-sdk/permissions
+  canUseTool?: CanUseTool;
 }
 
 export interface PostHogAPIConfig {

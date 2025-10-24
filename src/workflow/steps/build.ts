@@ -49,7 +49,30 @@ export const buildStep: WorkflowStepRunner = async ({ step, context }) => {
         permissionMode: configuredPermissionMode,
         settingSources: ['local'],
         mcpServers,
+        // Allow all tools for build phase - full read/write access needed for implementation
+        allowedTools: [
+            'Task',
+            'Bash',
+            'BashOutput',
+            'KillBash',
+            'Edit',
+            'Read',
+            'Write',
+            'Glob',
+            'Grep',
+            'NotebookEdit',
+            'WebFetch',
+            'WebSearch',
+            'ListMcpResources',
+            'ReadMcpResource',
+            'TodoWrite',
+        ],
     };
+
+    // Add fine-grained permission hook if provided
+    if (options.canUseTool) {
+        baseOptions.canUseTool = options.canUseTool;
+    }
 
     const response = query({
         prompt: fullPrompt,

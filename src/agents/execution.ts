@@ -30,7 +30,6 @@ Before completing the task, verify:
 - Captured meaningful events with PostHog SDK where appropriate
 - Wrapped new logic in PostHog feature flags where appropriate
 - Updated documentation, README, or type hints as needed
-- No build artifacts or dependencies are being committed
 </checklist>
 
 <output_format>

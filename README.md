@@ -145,3 +145,113 @@ await agent.runTask(task, {
   }
 });
 ```
+
+## Fine-Grained Permissions
+
+For advanced control over agent actions, you can provide a `canUseTool` callback that intercepts every tool use during the **build phase** (for task execution) or **direct run calls**. This allows you to implement custom approval flows, logging, or restrictions.
+
+See the [Claude Agent SDK Permissions docs](https://docs.claude.com/en/api/agent-sdk/permissions) for more details.
+
+### Per-Agent Configuration
+
+Apply the same permission hook to all task executions and direct runs:
+
+```typescript
+import { Agent } from '@posthog/agent';
+import type { PermissionResult } from '@posthog/agent';
+
+const agent = new Agent({
+  workingDirectory: "/path/to/repo",
+  posthogApiUrl: "https://app.posthog.com",
+  posthogApiKey: process.env.POSTHOG_API_KEY,
+  canUseTool: async (toolName, input, { signal, suggestions }) => {
+    // Block destructive commands
+    if (toolName === 'Bash' && input.command?.includes('rm -rf')) {
+      return {
+        behavior: 'deny',
+        message: 'Destructive rm -rf commands are not allowed',
+        interrupt: true
+      };
+    }
+
+    // Allow everything else
+    return {
+      behavior: 'allow',
+      updatedInput: input
+    };
+  }
+});
+```
+
+### Per-Task Configuration
+
+Override permissions for specific tasks (only applied during build phase):
+
+```typescript
+await agent.runTask(task, {
+  repositoryPath: "/path/to/repo",
+  permissionMode: PermissionMode.DEFAULT,
+  canUseTool: async (toolName, input, { signal, suggestions }) => {
+    // Custom approval UI
+    const approved = await showApprovalDialog({
+      tool: toolName,
+      input: input,
+      suggestions: suggestions // Permission updates for "always allow"
+    });
+
+    if (approved.action === 'allow') {
+      return {
+        behavior: 'allow',
+        updatedInput: approved.modifiedInput || input,
+        updatedPermissions: approved.rememberChoice ? suggestions : undefined
+      };
+    }
+
+    return {
+      behavior: 'deny',
+      message: approved.reason || 'User denied permission',
+      interrupt: !approved.continueWithGuidance
+    };
+  }
+});
+```
+
+### Direct Run Example
+
+For one-off queries with custom permissions:
+
+```typescript
+const result = await agent.run("Fix the authentication bug", {
+  repositoryPath: "/path/to/repo",
+  permissionMode: PermissionMode.DEFAULT,
+  canUseTool: async (toolName, input, { signal }) => {
+    console.log(`Agent wants to use ${toolName}:`, input);
+
+    // Simple approval logic
+    if (toolName === 'Write' || toolName === 'Edit') {
+      const allowedFiles = ['src/', 'tests/'];
+      const filePath = input.file_path || input.path;
+      const isAllowed = allowedFiles.some(prefix => filePath?.startsWith(prefix));
+
+      if (!isAllowed) {
+        return {
+          behavior: 'deny',
+          message: `Can only modify files in: ${allowedFiles.join(', ')}`
+        };
+      }
+    }
+
+    return { behavior: 'allow', updatedInput: input };
+  }
+});
+```
+
+### Available Tool Names
+
+The `canUseTool` callback receives one of these tool names:
+- **Read-only**: `Read`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `ListMcpResources`, `ReadMcpResource`
+- **Modifications**: `Write`, `Edit`, `NotebookEdit`
+- **Execution**: `Bash`, `BashOutput`, `KillBash`, `Task`
+- **Planning**: `ExitPlanMode`, `TodoWrite`
+
+**Note**: Research and planning phases have fixed, read-only tool sets. The `canUseTool` hook only applies to the build phase and direct run calls.
