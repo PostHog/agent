@@ -40,6 +40,18 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
         permissionMode: 'plan',
         settingSources: ['local'],
         mcpServers,
+        // Allow research tools: read-only operations, web search, and MCP resources
+        allowedTools: [
+            'Read',
+            'Glob',
+            'Grep',
+            'WebFetch',
+            'WebSearch',
+            'ListMcpResources',
+            'ReadMcpResource',
+            'TodoWrite',
+            'BashOutput',
+        ],
     };
 
     const response = query({

@@ -57,7 +57,7 @@ Format requirements:
 - Follow with "**Options:**" on its own line
 - Start options with "- a)", "- b)", "- c)"
 - Always include "c) Something else (please specify)"
-- Max 3 questions total
+- Max 4 questions total
 </output_format>
 
 <examples>
