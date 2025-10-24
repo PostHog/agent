@@ -1,0 +1,42 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "question": "What type of change is 'HELP'?",
+      "options": [
+        "A new feature/Minor Change that should be added to a new version section (e.g., 1.5.0)",
+        "A bugfix/Patch Change that should be added to the existing 1.4.0 section",
+        "Something else (please specify)"
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "Where in the CHANGELOG should 'HELP' be added?",
+      "options": [
+        "As a new top-level version section (for an unreleased version)",
+        "To the existing 1.4.0 Minor Changes section",
+        "Something else (please specify)"
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "What is the complete text/description for the 'HELP' entry?",
+      "options": [
+        "Just the word 'HELP' alone as a bullet point",
+        "'Add HELP command/functionality' or similar descriptive text",
+        "Something else (please specify)"
+      ]
+    }
+  ],
+  "answered": true,
+  "answers": [
+    {
+      "questionId": "q1",
+      "selectedOption": "A new feature/Minor Change that should be added to a new version section (e.g., 1.5.0)"
+    },
+    {
+      "questionId": "q2",
+      "selectedOption": "As a new top-level version section (for an unreleased version)"
+    }
+  ]
+}
