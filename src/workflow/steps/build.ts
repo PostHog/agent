@@ -79,6 +79,9 @@ export const buildStep: WorkflowStepRunner = async ({ step, context }) => {
         options: { ...baseOptions, ...(options.queryOverrides || {}) },
     });
 
+    // Track commits made during Claude Code execution
+    const commitTracker = await gitManager.trackCommitsDuring();
+
     for await (const message of response) {
         emitEvent(adapter.createRawSDKEvent(message));
         const transformed = adapter.transform(message);
@@ -87,29 +90,21 @@ export const buildStep: WorkflowStepRunner = async ({ step, context }) => {
         }
     }
 
-    const hasChanges = await gitManager.hasChanges();
-    context.stepResults[step.id] = { commitCreated: false };
-    if (!hasChanges) {
-        stepLogger.warn('No changes to commit in build phase', { taskId: task.id });
-        emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'build' }));
-        return { status: 'completed' };
-    }
-
-    await gitManager.addFiles(['.']);
-    const commitCreated = await finalizeStepGitActions(context, step, {
+    // Finalize: commit any remaining changes and optionally push
+    const { commitCreated, pushedBranch } = await commitTracker.finalize({
         commitMessage: `Implementation for ${task.title}`,
+        push: step.push,
     });
+
     context.stepResults[step.id] = { commitCreated };
 
     if (!commitCreated) {
-        stepLogger.warn('No commit created during build step', { taskId: task.id });
-    }
-
-    // Always push after build if configured, even if agent created the commits
-    if (step.push && !commitCreated) {
-        const branchName = await gitManager.getCurrentBranch();
-        await gitManager.pushBranch(branchName);
-        stepLogger.info('Pushed branch after build', { branch: branchName });
+        stepLogger.warn('No changes to commit in build phase', { taskId: task.id });
+    } else {
+        stepLogger.info('Build commits finalized', {
+            taskId: task.id,
+            pushedBranch
+        });
     }
 
     emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'build' }));
