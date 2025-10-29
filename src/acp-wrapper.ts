@@ -64,7 +64,7 @@ export class ACPWrapper {
 
         // Create streams for JSON-RPC communication
         const writable = new WritableStream<Uint8Array>({
-            write: (chunk) => {
+            write: (chunk: Uint8Array) => {
                 if (this.subprocess?.stdin) {
                     this.subprocess.stdin.write(chunk);
                 }
@@ -75,7 +75,7 @@ export class ACPWrapper {
         });
 
         const readable = new ReadableStream<Uint8Array>({
-            start: (controller) => {
+            start: (controller: ReadableStreamDefaultController<Uint8Array>) => {
                 if (!this.subprocess?.stdout) {
                     controller.close();
                     return;
