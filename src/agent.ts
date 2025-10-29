@@ -1,18 +1,17 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Task, ExecutionResult, AgentConfig, CanUseTool } from './types.js';
 import { TaskManager } from './task-manager.js';
 import { PostHogAPIClient } from './posthog-api.js';
 import { PostHogFileManager } from './file-manager.js';
 import { GitManager } from './git-manager.js';
 import { TemplateManager } from './template-manager.js';
-import { ClaudeAdapter } from './adapters/claude/claude-adapter.js';
-import type { ProviderAdapter } from './adapters/types.js';
 import { Logger } from './utils/logger.js';
 import { PromptBuilder } from './prompt-builder.js';
 import { TaskProgressReporter } from './task-progress-reporter.js';
 import { AISDKExtractor, type StructuredExtractor, type ExtractedQuestion, type ExtractedQuestionWithAnswer } from './structured-extraction.js';
 import { TASK_WORKFLOW } from './workflow/config.js';
 import type { WorkflowRuntime } from './workflow/types.js';
+import { ACPWrapper } from './acp-wrapper.js';
+import type { SessionNotification } from '@agentclientprotocol/sdk';
 
 export class Agent {
     private workingDirectory: string;
@@ -22,7 +21,8 @@ export class Agent {
     private fileManager: PostHogFileManager;
     private gitManager: GitManager;
     private templateManager: TemplateManager;
-    private adapter: ProviderAdapter;
+    private acpWrapper?: ACPWrapper;
+    private currentTaskWrapper?: { wrapper?: ACPWrapper }; // For workflow cancellation
     private logger: Logger;
     private progressReporter: TaskProgressReporter;
     private promptBuilder: PromptBuilder;
@@ -43,16 +43,19 @@ export class Agent {
             || 'https://mcp.posthog.com/mcp';
 
         // Add auth if API key provided
-        const headers: Record<string, string> = {};
+        const headers: Array<{ name: string; value: string }> = [];
         if (config.posthogApiKey) {
-            headers['Authorization'] = `Bearer ${config.posthogApiKey}`;
+            headers.push({
+                name: 'Authorization',
+                value: `Bearer ${config.posthogApiKey}`,
+            });
         }
 
         const defaultMcpServers = {
             posthog: {
                 type: 'http' as const,
                 url: posthogMcpUrl,
-                ...(Object.keys(headers).length > 0 ? { headers } : {}),
+                headers,
             }
         };
 
@@ -63,8 +66,6 @@ export class Agent {
         };
         this.logger = new Logger({ debug: this.debug, prefix: '[PostHog Agent]' });
         this.taskManager = new TaskManager();
-        // Hardcode Claude adapter for now - extensible for other providers later
-        this.adapter = new ClaudeAdapter();
 
         this.fileManager = new PostHogFileManager(
             this.workingDirectory,
@@ -143,9 +144,12 @@ export class Agent {
 
         // Initialize progress reporter for task run tracking (needed for PR attachment)
         await this.progressReporter.start(task.id, { totalSteps: TASK_WORKFLOW.length });
-        this.emitEvent(this.adapter.createStatusEvent('run_started', { runId: this.progressReporter.runId }));
+        this.emitCustomNotification('run_started', { runId: this.progressReporter.runId });
 
         await this.prepareTaskBranch(taskSlug, isCloudMode);
+
+        // Create shared wrapper reference for cancellation support
+        const currentWrapper: { wrapper?: ACPWrapper } = {};
 
         const workflowContext: WorkflowRuntime = {
             task,
@@ -158,67 +162,71 @@ export class Agent {
             gitManager: this.gitManager,
             promptBuilder: this.promptBuilder,
             progressReporter: this.progressReporter,
-            adapter: this.adapter,
             mcpServers: this.mcpServers,
             posthogAPI: this.posthogAPI,
             extractor: this.extractor,
-            emitEvent: (event: any) => this.emitEvent(event),
+            emitEvent: (event: SessionNotification | { method: string; params: Record<string, unknown> }) => this.emitEvent(event),
             stepResults: {},
+            currentWrapper,
         };
 
-        for (const step of TASK_WORKFLOW) {
-            const result = await step.run({ step, context: workflowContext });
-            if (result.halt) {
-                return;
+        // Store wrapper reference for cancellation
+        this.currentTaskWrapper = currentWrapper;
+
+        try {
+            for (const step of TASK_WORKFLOW) {
+                const result = await step.run({ step, context: workflowContext });
+                if (result.halt) {
+                    return;
+                }
             }
-        }
 
-        const shouldCreatePR = options.createPR ?? isCloudMode;
-        if (shouldCreatePR) {
-            await this.ensurePullRequest(task, workflowContext.stepResults);
-        }
+            const shouldCreatePR = options.createPR ?? isCloudMode;
+            if (shouldCreatePR) {
+                await this.ensurePullRequest(task, workflowContext.stepResults);
+            }
 
-        await this.progressReporter.complete();
-        this.logger.info('Task execution complete', { taskId: task.id });
-        this.emitEvent(this.adapter.createStatusEvent('task_complete', { taskId: task.id }));
+            await this.progressReporter.complete();
+            this.logger.info('Task execution complete', { taskId: task.id });
+            this.emitCustomNotification('task_complete', { taskId: task.id });
+        } finally {
+            this.currentTaskWrapper = undefined;
+        }
     }
 
-    // Direct prompt execution - still supported for low-level usage
+    // Direct prompt execution via ACP
     async run(prompt: string, options: { repositoryPath?: string; permissionMode?: import('./types.js').PermissionMode; queryOverrides?: Record<string, any>; canUseTool?: CanUseTool } = {}): Promise<ExecutionResult> {
         await this._configureLlmGateway();
-        const baseOptions: Record<string, any> = {
-            model: "claude-sonnet-4-5-20250929",
-            cwd: options.repositoryPath || this.workingDirectory,
-            permissionMode: (options.permissionMode as any) || "default",
-            settingSources: ["local"],
-            mcpServers: this.mcpServers,
-        };
 
-        // Add canUseTool hook if provided (options take precedence over instance config)
-        const canUseTool = options.canUseTool || this.canUseTool;
-        if (canUseTool) {
-            baseOptions.canUseTool = canUseTool;
-        }
+        const cwd = options.repositoryPath || this.workingDirectory;
 
-        const response = query({
-            prompt,
-            options: { ...baseOptions, ...(options.queryOverrides || {}) },
+        // Initialize ACP wrapper for direct execution
+        this.acpWrapper = new ACPWrapper({
+            logger: this.logger.child('ACPWrapper'),
+            cwd,
+            onSessionUpdate: (notification: SessionNotification) => {
+                this.logger.debug('Session update received', { type: notification.update.sessionUpdate });
+                this.emitEvent(notification);
+            },
         });
 
-        const results = [];
-        for await (const message of response) {
-            this.logger.debug('Received message in direct run', message);
-            // Emit raw SDK event
-            this.emitEvent(this.adapter.createRawSDKEvent(message));
-            // Emit transformed event
-            const transformedEvent = this.adapter.transform(message);
-            if (transformedEvent) {
-                this.emitEvent(transformedEvent);
+        try {
+            await this.acpWrapper.start();
+            const sessionId = await this.acpWrapper.createSession({
+                cwd,
+                mcpServers: this.mcpServers,
+            });
+
+            this.logger.info('Direct execution - ACP session created', { sessionId });
+            await this.acpWrapper.prompt(prompt);
+
+            return { results: [] };
+        } finally {
+            if (this.acpWrapper) {
+                await this.acpWrapper.stop();
+                this.acpWrapper = undefined;
             }
-            results.push(message);
         }
-        
-        return { results };
     }
     
     // PostHog task operations
@@ -382,7 +390,33 @@ Generated by PostHog Agent`;
     }
 
     // Execution management
-    cancelTask(taskId: string): void {
+    async cancelTask(taskId: string): Promise<void> {
+        // Cancel the ACP session if running in workflow
+        if (this.currentTaskWrapper?.wrapper) {
+            try {
+                await this.currentTaskWrapper.wrapper.cancel();
+                this.logger.info('ACP workflow session cancelled', { taskId });
+            } catch (error) {
+                this.logger.error('Failed to cancel ACP workflow session', {
+                    taskId,
+                    error: error instanceof Error ? error.message : String(error),
+                });
+            }
+        }
+
+        // Cancel the ACP session if running in direct execution
+        if (this.acpWrapper) {
+            try {
+                await this.acpWrapper.cancel();
+                this.logger.info('ACP direct session cancelled', { taskId });
+            } catch (error) {
+                this.logger.error('Failed to cancel ACP direct session', {
+                    taskId,
+                    error: error instanceof Error ? error.message : String(error),
+                });
+            }
+        }
+
         // Find the execution for this task and cancel it
         for (const [executionId, execution] of this.taskManager['executionStates']) {
             if (execution.taskId === taskId && execution.status === 'running') {
@@ -406,7 +440,7 @@ Generated by PostHog Agent`;
         const existingBranch = await this.gitManager.getTaskBranch(taskSlug);
         if (!existingBranch) {
             const branchName = await this.gitManager.createTaskBranch(taskSlug);
-            this.emitEvent(this.adapter.createStatusEvent('branch_created', { branch: branchName }));
+            this.emitCustomNotification('branch_created', { branch: branchName });
 
             await this.fileManager.ensureGitignore();
             await this.gitManager.addAllPostHogFiles();
@@ -450,12 +484,6 @@ Generated by PostHog Agent`;
             return;
         }
 
-        const buildResult = stepResults['build'];
-        if (!buildResult?.commitCreated) {
-            this.logger.warn('Build step did not produce a commit; skipping PR creation', { taskId: task.id });
-            return;
-        }
-
         const branchName = await this.gitManager.getCurrentBranch();
         const prUrl = await this.createPullRequest(
             task.id,
@@ -464,7 +492,7 @@ Generated by PostHog Agent`;
             task.description ?? ''
         );
 
-        this.emitEvent(this.adapter.createStatusEvent('pr_created', { prUrl }));
+        this.emitCustomNotification('pr_created', { prUrl });
 
         try {
             await this.attachPullRequestToTask(task.id, prUrl, branchName);
@@ -476,17 +504,46 @@ Generated by PostHog Agent`;
         }
     }
 
-    private emitEvent(event: any): void {
-        if (this.debug && event.type !== 'token') {
-            // Log all events except tokens (too verbose)
-            this.logger.debug('Emitting event', { type: event.type, ts: event.ts });
+    /**
+     * Emit a custom PostHog notification as an ACP extension notification
+     */
+    private emitCustomNotification(type: string, data: Record<string, any>): void {
+        const notification = {
+            method: '_posthog/status',
+            params: {
+                type,
+                timestamp: Date.now(),
+                _meta: data,
+            },
+        };
+
+        this.logger.debug('Emitting custom notification', { type, data });
+        this.emitEvent(notification);
+    }
+
+    /**
+     * Emit an event (either SessionNotification or custom notification)
+     */
+    private emitEvent(event: SessionNotification | { method: string; params: Record<string, unknown> }): void {
+        // Log session updates but not token-level updates (too verbose)
+        if (this.debug) {
+            let eventType: string | undefined;
+            if ('method' in event) {
+                // Custom notification
+                eventType = event.method;
+            } else {
+                // SessionNotification
+                eventType = event.update.sessionUpdate;
+            }
+
+            if (eventType && eventType !== 'agent_message_chunk') {
+                this.logger.debug('Emitting event', { type: eventType });
+            }
         }
-        const persistPromise = this.progressReporter.recordEvent(event);
-        if (persistPromise && typeof persistPromise.then === 'function') {
-            persistPromise.catch((error: Error) =>
-                this.logger.debug('Failed to persist agent event', { message: error.message })
-            );
-        }
+
+        // TODO: Convert ACP events to a format suitable for progress tracking
+        // For now, we skip persisting ACP events to avoid type conflicts
+
         this.onEvent?.(event);
     }
 }

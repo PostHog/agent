@@ -1,20 +1,18 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
 import { RESEARCH_SYSTEM_PROMPT } from '../../agents/research.js';
 import type { ExtractedQuestionWithAnswer } from '../../structured-extraction.js';
 import type { WorkflowStepRunner } from '../types.js';
 import { finalizeStepGitActions } from '../utils.js';
+import { runACPStep } from '../acp-helpers.js';
 
 export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
     const {
         task,
         cwd,
         isCloudMode,
-        options,
         logger,
         fileManager,
         gitManager,
         promptBuilder,
-        adapter,
         mcpServers,
         extractor,
         emitEvent,
@@ -29,51 +27,22 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
     }
 
     stepLogger.info('Starting research phase', { taskId: task.id });
-    emitEvent(adapter.createStatusEvent('phase_start', { phase: 'research' }));
+    emitEvent({ method: '_posthog/status', params: { type: 'phase_start', _meta: { phase: 'research' } } });
 
     const researchPrompt = await promptBuilder.buildResearchPrompt(task, cwd);
     const fullPrompt = `${RESEARCH_SYSTEM_PROMPT}\n\n${researchPrompt}`;
 
-    const baseOptions: Record<string, any> = {
-        model: step.model,
+    const researchContent = await runACPStep({
+        logger,
         cwd,
-        permissionMode: 'plan',
-        settingSources: ['local'],
         mcpServers,
-        // Allow research tools: read-only operations, web search, and MCP resources
-        allowedTools: [
-            'Read',
-            'Glob',
-            'Grep',
-            'WebFetch',
-            'WebSearch',
-            'ListMcpResources',
-            'ReadMcpResource',
-            'TodoWrite',
-            'BashOutput',
-        ],
-    };
-
-    const response = query({
         prompt: fullPrompt,
-        options: { ...baseOptions, ...(options.queryOverrides || {}) },
+        onSessionUpdate: (notification) => {
+            stepLogger.debug('Session update', { type: notification.update.sessionUpdate });
+            emitEvent(notification);
+        },
+        currentWrapper: context.currentWrapper,
     });
-
-    let researchContent = '';
-    for await (const message of response) {
-        emitEvent(adapter.createRawSDKEvent(message));
-        const transformed = adapter.transform(message);
-        if (transformed) {
-            emitEvent(transformed);
-        }
-        if (message.type === 'assistant' && message.message?.content) {
-            for (const c of message.message.content) {
-                if (c.type === 'text' && c.text) {
-                    researchContent += `${c.text}\n`;
-                }
-            }
-        }
-    }
 
     if (researchContent.trim()) {
         await fileManager.writeResearch(task.id, researchContent.trim());
@@ -97,10 +66,11 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
             });
 
             emitEvent({
-                type: 'artifact',
-                ts: Date.now(),
-                kind: 'research_questions',
-                content: parsedQuestions,
+                method: '_posthog/artifact',
+                params: {
+                    type: 'research_questions',
+                    _meta: { content: parsedQuestions },
+                },
             });
 
             stepLogger.info('Questions extracted successfully', {
@@ -113,11 +83,15 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
                 error: error instanceof Error ? error.message : String(error),
             });
             emitEvent({
-                type: 'error',
-                ts: Date.now(),
-                message: `Failed to extract questions: ${
-                    error instanceof Error ? error.message : String(error)
-                }`,
+                method: '_posthog/error',
+                params: {
+                    type: 'extraction_error',
+                    _meta: {
+                        message: `Failed to extract questions: ${
+                            error instanceof Error ? error.message : String(error)
+                        }`,
+                    },
+                },
             });
         }
     } else if (!extractor) {
@@ -125,15 +99,16 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
             'Question extractor not available, skipping question extraction. Ensure LLM gateway is configured.'
         );
         emitEvent({
-            type: 'status',
-            ts: Date.now(),
-            phase: 'extraction_skipped',
-            message: 'Question extraction skipped - extractor not configured',
+            method: '_posthog/status',
+            params: {
+                type: 'extraction_skipped',
+                _meta: { message: 'Question extraction skipped - extractor not configured' },
+            },
         });
     }
 
     if (!isCloudMode) {
-        emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'research' }));
+        emitEvent({ method: '_posthog/status', params: { type: 'phase_complete', _meta: { phase: 'research' } } });
         return { status: 'completed', halt: true };
     }
 
@@ -163,6 +138,6 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
         stepLogger.info('Auto-answered research questions', { taskId: task.id });
     }
 
-    emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'research' }));
+    emitEvent({ method: '_posthog/status', params: { type: 'phase_complete', _meta: { phase: 'research' } } });
     return { status: 'completed' };
 };

@@ -415,6 +415,14 @@ export class PromptBuilder {
 
     return prompt;
   }
+
+  /**
+   * Build a comprehensive prompt for task execution
+   * This combines all aspects: task description, file references, and plan if available
+   */
+  async buildTaskPrompt(task: Task, repositoryPath?: string): Promise<string> {
+    return this.buildExecutionPrompt(task, repositoryPath);
+  }
 }
 
 

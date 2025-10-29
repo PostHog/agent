@@ -1,19 +1,17 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
 import { PLANNING_SYSTEM_PROMPT } from '../../agents/planning.js';
 import type { WorkflowStepRunner } from '../types.js';
 import { finalizeStepGitActions } from '../utils.js';
+import { runACPStep } from '../acp-helpers.js';
 
 export const planStep: WorkflowStepRunner = async ({ step, context }) => {
     const {
         task,
         cwd,
         isCloudMode,
-        options,
         logger,
         fileManager,
         gitManager,
         promptBuilder,
-        adapter,
         mcpServers,
         emitEvent,
     } = context;
@@ -29,12 +27,12 @@ export const planStep: WorkflowStepRunner = async ({ step, context }) => {
     const questionsData = await fileManager.readQuestions(task.id);
     if (!questionsData || !questionsData.answered) {
         stepLogger.info('Waiting for answered research questions', { taskId: task.id });
-        emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'research_questions' }));
+        emitEvent({ method: '_posthog/status', params: { type: 'phase_complete', _meta: { phase: 'research_questions' } } });
         return { status: 'skipped', halt: true };
     }
 
     stepLogger.info('Starting planning phase', { taskId: task.id });
-    emitEvent(adapter.createStatusEvent('phase_start', { phase: 'planning' }));
+    emitEvent({ method: '_posthog/status', params: { type: 'phase_start', _meta: { phase: 'planning' } } });
 
     const researchContent = await fileManager.readResearch(task.id);
     let researchContext = '';
@@ -63,47 +61,17 @@ export const planStep: WorkflowStepRunner = async ({ step, context }) => {
     const planningPrompt = await promptBuilder.buildPlanningPrompt(task, cwd);
     const fullPrompt = `${PLANNING_SYSTEM_PROMPT}\n\n${planningPrompt}\n\n${researchContext}`;
 
-    const baseOptions: Record<string, any> = {
-        model: step.model,
+    const planContent = await runACPStep({
+        logger,
         cwd,
-        permissionMode: 'plan',
-        settingSources: ['local'],
         mcpServers,
-        // Allow research tools: read-only operations, web search, MCP resources, and ExitPlanMode
-        allowedTools: [
-            'Read',
-            'Glob',
-            'Grep',
-            'WebFetch',
-            'WebSearch',
-            'ListMcpResources',
-            'ReadMcpResource',
-            'ExitPlanMode',
-            'TodoWrite',
-            'BashOutput',
-        ],
-    };
-
-    const response = query({
         prompt: fullPrompt,
-        options: { ...baseOptions, ...(options.queryOverrides || {}) },
+        onSessionUpdate: (notification) => {
+            stepLogger.debug('Session update', { type: notification.update.sessionUpdate });
+            emitEvent(notification);
+        },
+        currentWrapper: context.currentWrapper,
     });
-
-    let planContent = '';
-    for await (const message of response) {
-        emitEvent(adapter.createRawSDKEvent(message));
-        const transformed = adapter.transform(message);
-        if (transformed) {
-            emitEvent(transformed);
-        }
-        if (message.type === 'assistant' && message.message?.content) {
-            for (const c of message.message.content) {
-                if (c.type === 'text' && c.text) {
-                    planContent += `${c.text}\n`;
-                }
-            }
-        }
-    }
 
     if (planContent.trim()) {
         await fileManager.writePlan(task.id, planContent.trim());
@@ -116,10 +84,10 @@ export const planStep: WorkflowStepRunner = async ({ step, context }) => {
     });
 
     if (!isCloudMode) {
-        emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'planning' }));
+        emitEvent({ method: '_posthog/status', params: { type: 'phase_complete', _meta: { phase: 'planning' } } });
         return { status: 'completed', halt: true };
     }
 
-    emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'planning' }));
+    emitEvent({ method: '_posthog/status', params: { type: 'phase_complete', _meta: { phase: 'planning' } } });
     return { status: 'completed' };
 };

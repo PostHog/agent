@@ -1,17 +1,14 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
 import { EXECUTION_SYSTEM_PROMPT } from '../../agents/execution.js';
 import { PermissionMode } from '../../types.js';
 import type { WorkflowStepRunner } from '../types.js';
-import { finalizeStepGitActions } from '../utils.js';
+import { runACPStep } from '../acp-helpers.js';
 
 export const buildStep: WorkflowStepRunner = async ({ step, context }) => {
     const {
         task,
         cwd,
-        options,
         logger,
         promptBuilder,
-        adapter,
         mcpServers,
         gitManager,
         emitEvent,
@@ -31,64 +28,25 @@ export const buildStep: WorkflowStepRunner = async ({ step, context }) => {
     }
 
     stepLogger.info('Starting build phase', { taskId: task.id });
-    emitEvent(adapter.createStatusEvent('phase_start', { phase: 'build' }));
+    emitEvent({ method: '_posthog/status', params: { type: 'phase_start', _meta: { phase: 'build' } } });
 
     const executionPrompt = await promptBuilder.buildExecutionPrompt(task, cwd);
     const fullPrompt = `${EXECUTION_SYSTEM_PROMPT}\n\n${executionPrompt}`;
 
-    const configuredPermissionMode =
-        options.permissionMode ??
-        (typeof step.permissionMode === 'string'
-            ? (step.permissionMode as PermissionMode)
-            : step.permissionMode) ??
-        PermissionMode.ACCEPT_EDITS;
-
-    const baseOptions: Record<string, any> = {
-        model: step.model,
-        cwd,
-        permissionMode: configuredPermissionMode,
-        settingSources: ['local'],
-        mcpServers,
-        // Allow all tools for build phase - full read/write access needed for implementation
-        allowedTools: [
-            'Task',
-            'Bash',
-            'BashOutput',
-            'KillBash',
-            'Edit',
-            'Read',
-            'Write',
-            'Glob',
-            'Grep',
-            'NotebookEdit',
-            'WebFetch',
-            'WebSearch',
-            'ListMcpResources',
-            'ReadMcpResource',
-            'TodoWrite',
-        ],
-    };
-
-    // Add fine-grained permission hook if provided
-    if (options.canUseTool) {
-        baseOptions.canUseTool = options.canUseTool;
-    }
-
-    const response = query({
-        prompt: fullPrompt,
-        options: { ...baseOptions, ...(options.queryOverrides || {}) },
-    });
-
     // Track commits made during Claude Code execution
     const commitTracker = await gitManager.trackCommitsDuring();
 
-    for await (const message of response) {
-        emitEvent(adapter.createRawSDKEvent(message));
-        const transformed = adapter.transform(message);
-        if (transformed) {
-            emitEvent(transformed);
-        }
-    }
+    await runACPStep({
+        logger,
+        cwd,
+        mcpServers,
+        prompt: fullPrompt,
+        onSessionUpdate: (notification) => {
+            stepLogger.debug('Session update', { type: notification.update.sessionUpdate });
+            emitEvent(notification);
+        },
+        currentWrapper: context.currentWrapper,
+    });
 
     // Finalize: commit any remaining changes and optionally push
     const { commitCreated, pushedBranch } = await commitTracker.finalize({
@@ -107,6 +65,6 @@ export const buildStep: WorkflowStepRunner = async ({ step, context }) => {
         });
     }
 
-    emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'build' }));
+    emitEvent({ method: '_posthog/status', params: { type: 'phase_complete', _meta: { phase: 'build' } } });
     return { status: 'completed' };
 };
