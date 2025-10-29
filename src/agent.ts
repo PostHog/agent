@@ -173,7 +173,8 @@ export class Agent {
             }
         }
 
-        if (isCloudMode) {
+        const shouldCreatePR = options.createPR ?? isCloudMode;
+        if (shouldCreatePR) {
             await this.ensurePullRequest(task, workflowContext.stepResults);
         }
 

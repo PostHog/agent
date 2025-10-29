@@ -105,6 +105,13 @@ export const buildStep: WorkflowStepRunner = async ({ step, context }) => {
         stepLogger.warn('No commit created during build step', { taskId: task.id });
     }
 
+    // Always push after build if configured, even if agent created the commits
+    if (step.push && !commitCreated) {
+        const branchName = await gitManager.getCurrentBranch();
+        await gitManager.pushBranch(branchName);
+        stepLogger.info('Pushed branch after build', { branch: branchName });
+    }
+
     emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'build' }));
     return { status: 'completed' };
 };

@@ -43,6 +43,7 @@ await agent.runTask(task, {
   repositoryPath: "/path/to/repo",
   permissionMode: PermissionMode.ACCEPT_EDITS,
   isCloudMode: false,
+  createPR: true, // Optional: create PR after build. This setting has no effect if running in cloud mode.
   autoProgress: true,
 });
 ```
