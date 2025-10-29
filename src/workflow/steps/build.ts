@@ -79,6 +79,9 @@ export const buildStep: WorkflowStepRunner = async ({ step, context }) => {
         options: { ...baseOptions, ...(options.queryOverrides || {}) },
     });
 
+    // Capture initial commit SHA to detect if Claude Code commits during execution
+    const commitBeforeBuild = await gitManager.getCommitSha('HEAD');
+
     for await (const message of response) {
         emitEvent(adapter.createRawSDKEvent(message));
         const transformed = adapter.transform(message);
@@ -87,26 +90,40 @@ export const buildStep: WorkflowStepRunner = async ({ step, context }) => {
         }
     }
 
+    // Check if Claude Code created any commits during execution
+    const commitAfterBuild = await gitManager.getCommitSha('HEAD');
+    const claudeCommittedChanges = commitBeforeBuild !== commitAfterBuild;
+
     const hasChanges = await gitManager.hasChanges();
-    context.stepResults[step.id] = { commitCreated: false };
-    if (!hasChanges) {
+    if (!hasChanges && !claudeCommittedChanges) {
         stepLogger.warn('No changes to commit in build phase', { taskId: task.id });
+        context.stepResults[step.id] = { commitCreated: false };
         emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'build' }));
         return { status: 'completed' };
     }
 
-    await gitManager.addFiles(['.']);
-    const commitCreated = await finalizeStepGitActions(context, step, {
-        commitMessage: `Implementation for ${task.title}`,
-    });
+    let commitCreated = claudeCommittedChanges;
+
+    // If there are still uncommitted changes, commit them
+    if (hasChanges) {
+        await gitManager.addFiles(['.']);
+        const ourCommitCreated = await finalizeStepGitActions(context, step, {
+            commitMessage: `Implementation for ${task.title}`,
+        });
+        commitCreated = commitCreated || ourCommitCreated;
+    }
+
     context.stepResults[step.id] = { commitCreated };
 
+    if (claudeCommittedChanges) {
+        stepLogger.info('Claude Code created commits during build', { taskId: task.id });
+    }
     if (!commitCreated) {
         stepLogger.warn('No commit created during build step', { taskId: task.id });
     }
 
-    // Always push after build if configured, even if agent created the commits
-    if (step.push && !commitCreated) {
+    // Always push after build if configured and commits were made
+    if (step.push && commitCreated && !hasChanges) {
         const branchName = await gitManager.getCurrentBranch();
         await gitManager.pushBranch(branchName);
         stepLogger.info('Pushed branch after build', { branch: branchName });
