@@ -1,0 +1,77 @@
+{
+  "questions": [
+    {
+      "id": "rq1",
+      "question": "What is the primary purpose of the PostHog Agent SDK?",
+      "options": [
+        "To provide a TypeScript SDK for building agents in PostHog's Array desktop app",
+        "To manage database connections for PostHog",
+        "To handle user authentication in PostHog",
+        "To process analytics data from PostHog"
+      ]
+    },
+    {
+      "id": "rq2",
+      "question": "What are the key features of the PostHog Agent SDK?",
+      "options": [
+        "Tool calling, multi-step reasoning, and memory management",
+        "Real-time data streaming and analytics",
+        "User interface components and styling",
+        "API rate limiting and caching"
+      ]
+    },
+    {
+      "id": "rq3",
+      "question": "How is the Agent SDK configured?",
+      "options": [
+        "Through environment variables and configuration objects",
+        "Through a web-based dashboard",
+        "Through command-line arguments only",
+        "Through hardcoded settings in the source code"
+      ]
+    },
+    {
+      "id": "rq4",
+      "question": "What permission system does the Agent SDK implement?",
+      "options": [
+        "A tool-based permission system with read-only and modification tools",
+        "Role-based access control (RBAC)",
+        "Attribute-based access control (ABAC)",
+        "No permission system"
+      ]
+    },
+    {
+      "id": "rq5",
+      "question": "What is the scope of the canUseTool hook in the Agent SDK?",
+      "options": [
+        "It applies only to the build phase and direct run calls, not to research and planning phases",
+        "It applies to all phases of agent execution",
+        "It applies only to the research phase",
+        "It is not used in the Agent SDK"
+      ]
+    }
+  ],
+  "answered": true,
+  "answers": [
+    {
+      "questionId": "rq1",
+      "selectedOption": "To provide a TypeScript SDK for building agents in PostHog's Array desktop app"
+    },
+    {
+      "questionId": "rq2",
+      "selectedOption": "Tool calling, multi-step reasoning, and memory management"
+    },
+    {
+      "questionId": "rq3",
+      "selectedOption": "Through environment variables and configuration objects"
+    },
+    {
+      "questionId": "rq4",
+      "selectedOption": "A tool-based permission system with read-only and modification tools"
+    },
+    {
+      "questionId": "rq5",
+      "selectedOption": "It applies only to the build phase and direct run calls, not to research and planning phases"
+    }
+  ]
+}
