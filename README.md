@@ -2,6 +2,8 @@
 
 TypeScript agent framework that wraps the Claude Agent SDK for PostHog's Array desktop app. Features a Git-based task execution system that stores task artifacts alongside your code.
 
+*Why do PostHog agents never get lost? Because they always track their own events!* 🐘
+
 ## Quick Start
 
 ```bash
