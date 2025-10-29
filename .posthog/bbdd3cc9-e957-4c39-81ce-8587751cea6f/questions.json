@@ -1,0 +1,55 @@
+{
+  "questions": [
+    {
+      "id": "joke_placement",
+      "question": "Where should the joke be placed in the README.md file?",
+      "options": [
+        "In the introduction/overview section at the top",
+        "In the features section",
+        "In the configuration section",
+        "In the permissions section",
+        "At the end as a closing remark",
+        "As a comment in code examples"
+      ]
+    },
+    {
+      "id": "joke_type",
+      "question": "What type of joke would be most appropriate for a technical SDK documentation?",
+      "options": [
+        "A programming/developer joke related to PostHog or analytics",
+        "A pun about agents or AI",
+        "A joke about configuration and setup",
+        "A meta-joke about documentation itself",
+        "A joke about common developer frustrations",
+        "A light-hearted comment about the SDK's capabilities"
+      ]
+    },
+    {
+      "id": "tone_balance",
+      "question": "How should the joke balance with the professional documentation tone?",
+      "options": [
+        "Keep it subtle and brief (one-liner)",
+        "Make it a longer, more elaborate joke",
+        "Format it as a highlighted callout or note",
+        "Include it as a comment in code examples",
+        "Add it as a footnote or aside",
+        "Integrate it naturally into existing text"
+      ]
+    }
+  ],
+  "answered": true,
+  "answers": [
+    {
+      "questionId": "joke_placement",
+      "selectedOption": "In the introduction/overview section at the top"
+    },
+    {
+      "questionId": "joke_type",
+      "selectedOption": "A programming/developer joke related to PostHog or analytics"
+    },
+    {
+      "questionId": "tone_balance",
+      "selectedOption": "Keep it subtle and brief (one-liner)"
+    }
+  ]
+}
