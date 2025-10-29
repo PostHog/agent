@@ -149,7 +149,6 @@ export class GitManager {
     }
   }
 
-  // Helper: Generate unique branch name with counter suffix if needed
   private async generateUniqueBranchName(baseName: string): Promise<string> {
     if (!await this.branchExists(baseName)) {
       return baseName;
@@ -164,7 +163,6 @@ export class GitManager {
     return uniqueName;
   }
 
-  // Helper: Safely switch to default branch if not already on it
   private async ensureOnDefaultBranch(): Promise<string> {
     const defaultBranch = await this.getDefaultBranch();
     const currentBranch = await this.getCurrentBranch();
@@ -177,7 +175,6 @@ export class GitManager {
     return defaultBranch;
   }
 
-  // Helper: Build commit command with optional author info
   private buildCommitCommand(message: string, options?: { allowEmpty?: boolean; authorName?: string; authorEmail?: string }): string {
     let command = `commit -m "${message.replace(/"/g, '\\"')}"`;
 
@@ -263,7 +260,23 @@ export class GitManager {
     };
   }
 
-  // Utility methods for PostHog task execution
+  async createTaskBranch(taskSlug: string): Promise<string> {
+    const branchName = `posthog/task-${taskSlug}`;
+
+    // Ensure we're on default branch before creating task branch
+    const defaultBranch = await this.ensureOnDefaultBranch();
+
+    this.logger.info('Creating task branch from default branch', {
+      branchName,
+      taskSlug,
+      baseBranch: defaultBranch
+    });
+
+    await this.createOrSwitchToBranch(branchName, defaultBranch);
+
+    return branchName;
+  }
+
   async createTaskPlanningBranch(taskId: string, baseBranch?: string): Promise<string> {
     const baseName = `posthog/task-${taskId}-planning`;
     const branchName = await this.generateUniqueBranchName(baseName);
