@@ -256,3 +256,8 @@ The `canUseTool` callback receives one of these tool names:
 - **Planning**: `ExitPlanMode`, `TodoWrite`
 
 **Note**: Research and planning phases have fixed, read-only tool sets. The `canUseTool` hook only applies to the build phase and direct run calls.
+
+
+## 🎭 Fun Fact
+
+Why did the AI agent go to therapy? Because it had too many unresolved dependencies! 🤖
