@@ -1,0 +1,35 @@
+{
+  "questions": [
+    {
+      "id": "joke_placement",
+      "question": "Where should the joke be placed in the README?",
+      "options": [
+        "After the header and description (lines 1-3), before 'Quick Start'",
+        "At the very end of the file after Configuration Options",
+        "Within the 'Key Features' section",
+        "Other location (please specify)"
+      ]
+    },
+    {
+      "id": "joke_type",
+      "question": "What type of joke would you like?",
+      "options": [
+        "A programming/developer-related joke (about agents, TypeScript, or AI)",
+        "A general software engineering joke",
+        "A PostHog-specific joke",
+        "Other (please specify)"
+      ]
+    }
+  ],
+  "answered": true,
+  "answers": [
+    {
+      "questionId": "joke_placement",
+      "selectedOption": "After the header and description (lines 1-3), before 'Quick Start'"
+    },
+    {
+      "questionId": "joke_type",
+      "selectedOption": "A programming/developer-related joke (about agents, TypeScript, or AI)"
+    }
+  ]
+}
