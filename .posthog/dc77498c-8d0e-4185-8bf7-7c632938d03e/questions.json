@@ -1,0 +1,35 @@
+{
+  "questions": [
+    {
+      "id": "joke_placement",
+      "question": "Where should the joke be placed in the README?",
+      "options": [
+        "After the Quick Start section (around line 11) - early in the document for immediate engagement",
+        "At the end of the README (after line 258) - as a closing/footer joke that doesn't interrupt technical content",
+        "In the Key Features section - perhaps as a humorous feature point",
+        "Something else (please specify)"
+      ]
+    },
+    {
+      "id": "joke_tone",
+      "question": "What tone should the joke have?",
+      "options": [
+        "Programming/developer humor (e.g., a dad joke about code, debugging, or git)",
+        "PostHog-specific humor (e.g., a joke about analytics or product tracking)",
+        "General tech industry humor",
+        "Something else (please specify)"
+      ]
+    }
+  ],
+  "answered": true,
+  "answers": [
+    {
+      "questionId": "joke_placement",
+      "selectedOption": "After the Quick Start section (around line 11) - early in the document for immediate engagement"
+    },
+    {
+      "questionId": "joke_tone",
+      "selectedOption": "Programming/developer humor (e.g., a dad joke about code, debugging, or git)"
+    }
+  ]
+}
