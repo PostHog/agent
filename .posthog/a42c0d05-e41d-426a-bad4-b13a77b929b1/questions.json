@@ -1,0 +1,63 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Where should the joke be placed in the README.md file?",
+      "options": [
+        "After the introduction (before Quick Start)",
+        "After Quick Start section",
+        "At the end of the file",
+        "In a dedicated 'Fun Facts' section"
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "What type of joke would be most appropriate for this technical audience?",
+      "options": [
+        "Programming/coding joke",
+        "AI/Claude-related joke",
+        "General tech industry humor",
+        "PostHog-specific joke"
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "Should the joke be formatted as:",
+      "options": [
+        "A comment in a code block",
+        "Plain text in a dedicated section",
+        "A blockquote",
+        "An inline comment within existing content"
+      ]
+    },
+    {
+      "id": "q4",
+      "question": "What tone should the joke maintain?",
+      "options": [
+        "Professional with subtle humor",
+        "Casual and lighthearted",
+        "Self-deprecating about the SDK",
+        "Witty and clever technical reference"
+      ]
+    }
+  ],
+  "answered": true,
+  "answers": [
+    {
+      "questionId": "q1",
+      "selectedOption": "After the introduction (before Quick Start)"
+    },
+    {
+      "questionId": "q2",
+      "selectedOption": "Programming/coding joke"
+    },
+    {
+      "questionId": "q3",
+      "selectedOption": "A comment in a code block"
+    },
+    {
+      "questionId": "q4",
+      "selectedOption": "Professional with subtle humor"
+    }
+  ]
+}
