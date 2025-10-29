@@ -97,6 +97,8 @@ export class GitManager {
   }
 
   async createOrSwitchToBranch(branchName: string, baseBranch?: string): Promise<void> {
+    await this.ensureCleanWorkingDirectory('switching branches');
+
     const exists = await this.branchExists(branchName);
     if (exists) {
       await this.switchToBranch(branchName);
@@ -118,15 +120,7 @@ export class GitManager {
     authorName?: string;
     authorEmail?: string;
   }): Promise<string> {
-    let command = 'commit -m "' + message.replace(/"/g, '\\"') + '"';
-
-    const authorName = options?.authorName || this.authorName;
-    const authorEmail = options?.authorEmail || this.authorEmail;
-
-    if (authorName && authorEmail) {
-      command += ` --author="${authorName} <${authorEmail}>"`;
-    }
-
+    const command = this.buildCommitCommand(message, options);
     return await this.runGitCommand(command);
   }
 
@@ -148,6 +142,59 @@ export class GitManager {
     }
   }
 
+  // Helper: Centralized safety check for uncommitted changes
+  private async ensureCleanWorkingDirectory(operation: string): Promise<void> {
+    if (await this.hasChanges()) {
+      throw new Error(`Uncommitted changes detected. Please commit or stash changes before ${operation}.`);
+    }
+  }
+
+  // Helper: Generate unique branch name with counter suffix if needed
+  private async generateUniqueBranchName(baseName: string): Promise<string> {
+    if (!await this.branchExists(baseName)) {
+      return baseName;
+    }
+
+    let counter = 1;
+    let uniqueName = `${baseName}-${counter}`;
+    while (await this.branchExists(uniqueName)) {
+      counter++;
+      uniqueName = `${baseName}-${counter}`;
+    }
+    return uniqueName;
+  }
+
+  // Helper: Safely switch to default branch if not already on it
+  private async ensureOnDefaultBranch(): Promise<string> {
+    const defaultBranch = await this.getDefaultBranch();
+    const currentBranch = await this.getCurrentBranch();
+
+    if (currentBranch !== defaultBranch) {
+      await this.ensureCleanWorkingDirectory('switching to default branch');
+      await this.switchToBranch(defaultBranch);
+    }
+
+    return defaultBranch;
+  }
+
+  // Helper: Build commit command with optional author info
+  private buildCommitCommand(message: string, options?: { allowEmpty?: boolean; authorName?: string; authorEmail?: string }): string {
+    let command = `commit -m "${message.replace(/"/g, '\\"')}"`;
+
+    if (options?.allowEmpty) {
+      command += ' --allow-empty';
+    }
+
+    const authorName = options?.authorName || this.authorName;
+    const authorEmail = options?.authorEmail || this.authorEmail;
+
+    if (authorName && authorEmail) {
+      command += ` --author="${authorName} <${authorEmail}>"`;
+    }
+
+    return command;
+  }
+
   async getRemoteUrl(): Promise<string | null> {
     try {
       return await this.runGitCommand('remote get-url origin');
@@ -161,75 +208,104 @@ export class GitManager {
     await this.runGitCommand(`push ${forceFlag} -u origin ${branchName}`);
   }
 
+  /**
+   * Tracks whether commits were made during an operation by comparing HEAD SHA
+   * before and after. Returns an object with methods to finalize the operation.
+   *
+   * Usage:
+   * const tracker = await gitManager.trackCommitsDuring();
+   * // ... do work that might create commits ...
+   * const result = await tracker.finalize({ commitMessage: 'fallback message', push: true });
+   */
+  async trackCommitsDuring(): Promise<{
+    finalize: (options: {
+      commitMessage: string;
+      push?: boolean;
+    }) => Promise<{ commitCreated: boolean; pushedBranch: boolean }>;
+  }> {
+    const initialSha = await this.getCommitSha('HEAD');
+
+    return {
+      finalize: async (options) => {
+        const currentSha = await this.getCommitSha('HEAD');
+        const externalCommitsCreated = initialSha !== currentSha;
+        const hasUncommittedChanges = await this.hasChanges();
+
+        // If no commits and no changes, nothing to do
+        if (!externalCommitsCreated && !hasUncommittedChanges) {
+          return { commitCreated: false, pushedBranch: false };
+        }
+
+        let commitCreated = externalCommitsCreated;
+
+        // Commit any remaining uncommitted changes
+        if (hasUncommittedChanges) {
+          await this.runGitCommand('add .');
+          const hasStagedChanges = await this.hasStagedChanges();
+
+          if (hasStagedChanges) {
+            await this.commitChanges(options.commitMessage);
+            commitCreated = true;
+          }
+        }
+
+        // Push if requested and commits were made
+        let pushedBranch = false;
+        if (options.push && commitCreated) {
+          const currentBranch = await this.getCurrentBranch();
+          await this.pushBranch(currentBranch);
+          pushedBranch = true;
+          this.logger.info('Pushed branch after operation', { branch: currentBranch });
+        }
+
+        return { commitCreated, pushedBranch };
+      }
+    };
+  }
+
   // Utility methods for PostHog task execution
   async createTaskPlanningBranch(taskId: string, baseBranch?: string): Promise<string> {
-    let branchName = `posthog/task-${taskId}-planning`;
-    let counter = 1;
-
-    // Find a unique branch name if the base name already exists
-    while (await this.branchExists(branchName)) {
-      branchName = `posthog/task-${taskId}-planning-${counter}`;
-      counter++;
-    }
+    const baseName = `posthog/task-${taskId}-planning`;
+    const branchName = await this.generateUniqueBranchName(baseName);
 
     this.logger.debug('Creating unique planning branch', { branchName, taskId });
 
-    // If no base branch specified, ensure we're on main/master
-    if (!baseBranch) {
-      baseBranch = await this.getDefaultBranch();
-      await this.switchToBranch(baseBranch);
+    const base = baseBranch || await this.ensureOnDefaultBranch();
+    await this.createBranch(branchName, base);
 
-      // Check for uncommitted changes
-      if (await this.hasChanges()) {
-        throw new Error(`Uncommitted changes detected. Please commit or stash changes before running tasks.`);
-      }
-    }
-
-    await this.createBranch(branchName, baseBranch); // Use createBranch instead of createOrSwitchToBranch for new branches
     return branchName;
   }
 
   async createTaskImplementationBranch(taskId: string, planningBranchName?: string): Promise<string> {
-    let branchName = `posthog/task-${taskId}-implementation`;
-    let counter = 1;
+    const baseName = `posthog/task-${taskId}-implementation`;
+    const branchName = await this.generateUniqueBranchName(baseName);
 
-    // Find a unique branch name if the base name already exists
-    while (await this.branchExists(branchName)) {
-      branchName = `posthog/task-${taskId}-implementation-${counter}`;
-      counter++;
-    }
-
-    const currentBranchBefore = await this.getCurrentBranch();
     this.logger.debug('Creating unique implementation branch', {
       branchName,
       taskId,
-      currentBranch: currentBranchBefore
+      currentBranch: await this.getCurrentBranch()
     });
 
-    // Implementation branch should branch from the specific planning branch
+    // Determine base branch: explicit param > current planning branch > default
     let baseBranch = planningBranchName;
 
     if (!baseBranch) {
-      // Try to find the corresponding planning branch
       const currentBranch = await this.getCurrentBranch();
       if (currentBranch.includes('-planning')) {
-        baseBranch = currentBranch; // Use current planning branch
+        baseBranch = currentBranch;
         this.logger.debug('Using current planning branch', { baseBranch });
       } else {
-        // Fallback to default branch
-        baseBranch = await this.getDefaultBranch();
-        this.logger.debug('No planning branch found, using default', { baseBranch });
-        await this.switchToBranch(baseBranch);
+        baseBranch = await this.ensureOnDefaultBranch();
+        this.logger.debug('Using default branch', { baseBranch });
       }
     }
 
     this.logger.debug('Creating implementation branch from base', { baseBranch, branchName });
-    await this.createBranch(branchName, baseBranch); // Create fresh branch from base
+    await this.createBranch(branchName, baseBranch);
 
-    const currentBranchAfter = await this.getCurrentBranch();
     this.logger.info('Implementation branch created', {
       branchName,
-      currentBranch: currentBranchAfter
+      currentBranch: await this.getCurrentBranch()
     });
 
     return branchName;
@@ -323,6 +399,7 @@ Generated by PostHog Agent`;
   ): Promise<string> {
     const currentBranch = await this.getCurrentBranch();
     if (currentBranch !== branchName) {
+      await this.ensureCleanWorkingDirectory('creating PR');
       await this.switchToBranch(branchName);
     }
 
@@ -366,31 +443,19 @@ Generated by PostHog Agent`;
 
   async commitAndPush(message: string, options?: { allowEmpty?: boolean }): Promise<void> {
     const hasChanges = await this.hasStagedChanges();
-    
+
     if (!hasChanges && !options?.allowEmpty) {
       this.logger.debug('No changes to commit, skipping');
       return;
     }
 
-    let command = `commit -m "${message.replace(/"/g, '\\"')}"`;
-    
-    if (options?.allowEmpty) {
-      command += ' --allow-empty';
-    }
-
-    const authorName = this.authorName;
-    const authorEmail = this.authorEmail;
-
-    if (authorName && authorEmail) {
-      command += ` --author="${authorName} <${authorEmail}>"`;
-    }
-
+    const command = this.buildCommitCommand(message, options);
     await this.runGitCommand(command);
-    
+
     // Push to origin
     const currentBranch = await this.getCurrentBranch();
     await this.pushBranch(currentBranch);
-    
+
     this.logger.info('Committed and pushed changes', { branch: currentBranch, message });
   }
 }
