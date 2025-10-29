@@ -1,0 +1,21 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Where should the joke be placed in the README?",
+      "options": [
+        "Add a new 'Fun Fact' or 'Easter Egg' section at the end of the file (after line 258)",
+        "Insert it inline within an existing section (e.g., in the 'Quick Start' or 'Key Features' section)",
+        "Create a comment in the TypeScript code examples that contains a joke",
+        "Something else (please specify)"
+      ]
+    }
+  ],
+  "answered": true,
+  "answers": [
+    {
+      "questionId": "q1",
+      "selectedOption": "Add a new 'Fun Fact' or 'Easter Egg' section at the end of the file (after line 258)"
+    }
+  ]
+}
