@@ -1,7 +1,7 @@
 import { generateObject } from 'ai';
-import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
 import { Logger } from './utils/logger.js';
+import { getAnthropicModel } from './utils/ai-sdk.js';
 
 export interface ExtractedQuestion {
   id: string;
@@ -41,27 +41,34 @@ export interface StructuredExtractor {
   extractQuestionsWithAnswers(researchContent: string): Promise<ExtractedQuestionWithAnswer[]>;
 }
 
+export type StructuredExtractorConfig = {
+  apiKey: string;
+  baseURL: string;
+  modelName?: string;
+  logger?: Logger;
+}
+
 export class AISDKExtractor implements StructuredExtractor {
   private logger: Logger;
   private model: any;
 
-  constructor(logger?: Logger) {
-    this.logger = logger || new Logger({ debug: false, prefix: '[AISDKExtractor]' });
+  constructor(config: StructuredExtractorConfig) {
+    this.logger = config.logger || new Logger({ debug: false, prefix: '[AISDKExtractor]' });
 
-    // Determine which provider to use based on environment variables
-    // Priority: Anthropic (if ANTHROPIC_BASE_URL is set) > OpenAI
-    const apiKey = process.env.ANTHROPIC_AUTH_TOKEN
-      || process.env.ANTHROPIC_API_KEY
-      || process.env.OPENAI_API_KEY;
-
-    if (!apiKey) {
+    if (!config.apiKey) {
       throw new Error('Missing API key for structured extraction. Ensure the LLM gateway is configured.');
     }
 
-    const baseURL = process.env.ANTHROPIC_BASE_URL || process.env.OPENAI_BASE_URL;
-    const modelName = 'claude-haiku-4-5';
-    this.model = anthropic(modelName);
-    this.logger.debug('Using Anthropic provider for structured extraction', { modelName, baseURL });
+    this.model = getAnthropicModel({
+      apiKey: config.apiKey,
+      baseURL: config.baseURL,
+      modelName: config.modelName || 'claude-haiku-4-5',
+    });
+
+    this.logger.debug('Using PostHog LLM gateway for structured extraction', {
+      modelName: config.modelName || 'claude-haiku-4-5',
+      baseURL: config.baseURL
+    });
   }
 
   async extractQuestions(researchContent: string): Promise<ExtractedQuestion[]> {
