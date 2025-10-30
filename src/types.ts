@@ -301,8 +301,8 @@ export interface AgentConfig {
   onEvent?: (event: AgentEvent) => void;
 
   // PostHog API configuration
-  posthogApiUrl?: string;
-  posthogApiKey?: string;
+  posthogApiUrl: string;
+  posthogApiKey: string;
 
   // PostHog MCP configuration
   posthogMcpUrl?: string;
