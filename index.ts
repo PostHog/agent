@@ -14,7 +14,11 @@ export type {
     ExecutionResult,
     AgentConfig,
     McpServerConfig,
-    AgentNotification
+    AgentNotification,
+    PostHogStatusNotification,
+    PostHogArtifactNotification,
+    PostHogErrorNotification,
+    PostHogNotification
 } from './src/types.js';
 
 export {
