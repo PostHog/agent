@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { ClientSideConnection, ndJsonStream, type Client, type SessionNotification, type RequestPermissionRequest, type RequestPermissionResponse, type ReadTextFileRequest, type ReadTextFileResponse, type WriteTextFileRequest, type WriteTextFileResponse, type CreateTerminalRequest, type CreateTerminalResponse, type TerminalOutputRequest, type TerminalOutputResponse, type ReleaseTerminalRequest, type ReleaseTerminalResponse, type WaitForTerminalExitRequest, type WaitForTerminalExitResponse, type KillTerminalCommandRequest, type KillTerminalResponse } from '@agentclientprotocol/sdk';
 import type { Logger } from './utils/logger.js';
+import type { PermissionModeValue } from './types.js';
 import { promises as fs } from 'fs';
 import { randomUUID } from 'crypto';
 
@@ -156,7 +157,7 @@ export class ACPWrapper {
         cwd: string;
         mcpServers?: Record<string, any>;
         systemPrompt?: string;
-        permissionMode?: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan';
+        permissionMode?: PermissionModeValue;
     }): Promise<string> {
         if (!this.connection) {
             throw new Error('Connection not established');

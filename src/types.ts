@@ -55,12 +55,28 @@ export interface SupportingFile {
   created_at: string;
 }
 
+/**
+ * Permission modes for agent sessions.
+ *
+ * For Claude (claude-code-acp):
+ * - "plan": Claude can analyze but not modify files or execute commands
+ * - "default": Prompts for permission on first use of each tool
+ * - "acceptEdits": Automatically accepts file edit permissions for the session
+ * - "bypassPermissions": Skips all permission prompts (only available in non-root mode)
+ *
+ * Other providers may have different modes.
+ *
+ * @see https://github.com/zed-industries/claude-code-acp/blob/main/src/acp-agent.ts
+ */
 export enum PermissionMode {
   PLAN = "plan",
   DEFAULT = "default",
   ACCEPT_EDITS = "acceptEdits",
   BYPASS = "bypassPermissions"
 }
+
+/** Flexible permission mode type that allows string values for provider-specific modes */
+export type PermissionModeValue = PermissionMode | (string & {});
 
 export interface ExecutionOptions {
   repositoryPath?: string;
