@@ -6,8 +6,8 @@ import type { PromptBuilder } from '../prompt-builder.js';
 import type { TaskProgressReporter } from '../task-progress-reporter.js';
 import type { PostHogAPIClient } from '../posthog-api.js';
 import type { StructuredExtractor } from '../structured-extraction.js';
-import type { SessionNotification } from '@agentclientprotocol/sdk';
 import type { ACPWrapper } from '../acp-wrapper.js';
+import type { Agent } from '../agent.js';
 
 export interface WorkflowRuntime {
     task: Task;
@@ -23,7 +23,7 @@ export interface WorkflowRuntime {
     mcpServers?: Record<string, any>;
     posthogAPI?: PostHogAPIClient;
     extractor?: StructuredExtractor;
-    emitEvent: (event: SessionNotification | { method: string; params: Record<string, unknown> }) => void;
+    agent: Agent;
     stepResults: Record<string, any>;
     currentWrapper: { wrapper?: ACPWrapper }; // Shared reference for cancellation
 }

@@ -1,4 +1,4 @@
-import { Agent } from './src/agent.js';
+import { Agent, type AgentNotification } from './src/agent.js';
 
 async function testACPIntegration() {
     console.log('Testing ACP integration...\n');
@@ -6,14 +6,14 @@ async function testACPIntegration() {
     const agent = new Agent({
         workingDirectory: process.cwd(),
         debug: true,
-        onEvent: (event) => {
-            if ('method' in event) {
-                // Custom notification
-                console.log(`[Custom Event] ${event.method}:`, JSON.stringify(event.params, null, 2));
-            } else if ('update' in event) {
-                // SessionNotification
-                console.log(`[ACP Event] ${event.update.sessionUpdate}:`,
-                    event.update.sessionUpdate === 'agent_message_chunk' ? '[message chunk]' : JSON.stringify(event, null, 2)
+        onNotification: (notification: AgentNotification) => {
+            if ('method' in notification) {
+                // PostHog notification
+                console.log(`[PostHog] ${notification.method}:`, JSON.stringify(notification.params, null, 2));
+            } else if ('update' in notification) {
+                // ACP SessionNotification
+                console.log(`[ACP] ${notification.update.sessionUpdate}:`,
+                    notification.update.sessionUpdate === 'agent_message_chunk' ? '[message chunk]' : JSON.stringify(notification, null, 2)
                 );
             }
         },

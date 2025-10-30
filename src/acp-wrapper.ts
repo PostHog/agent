@@ -4,10 +4,15 @@ import type { Logger } from './utils/logger.js';
 import { promises as fs } from 'fs';
 import { randomUUID } from 'crypto';
 
+export interface NotificationHandler {
+    sendNotification(notification: SessionNotification): void;
+}
+
 export interface ACPWrapperConfig {
     logger: Logger;
     cwd: string;
-    onSessionUpdate: (notification: SessionNotification) => void;
+    /** Agent that will receive ACP notifications */
+    notificationHandler: NotificationHandler;
 }
 
 interface TerminalState {
@@ -30,14 +35,14 @@ export class ACPWrapper {
     private sessionId?: string;
     private logger: Logger;
     private cwd: string;
-    private onSessionUpdate: (notification: SessionNotification) => void;
+    private notificationHandler: NotificationHandler;
     private subprocess?: ReturnType<typeof spawn>;
     private terminals = new Map<string, TerminalState>();
 
     constructor(config: ACPWrapperConfig) {
         this.logger = config.logger;
         this.cwd = config.cwd;
-        this.onSessionUpdate = config.onSessionUpdate;
+        this.notificationHandler = config.notificationHandler;
     }
 
     /**
@@ -46,10 +51,18 @@ export class ACPWrapper {
     async start(): Promise<void> {
         this.logger.debug('Starting claude-code-acp subprocess');
 
+        const env = { ...process.env };
+
         // Spawn claude-code-acp as subprocess
         this.subprocess = spawn('npx', ['@zed-industries/claude-code-acp'], {
             cwd: this.cwd,
             stdio: ['pipe', 'pipe', 'pipe'],
+            env: {
+                ...env,
+                // Force line buffering for stdout to prevent Electron buffering issues
+                NODE_NO_WARNINGS: '1',
+            },
+            windowsHide: true,
         });
 
         // Log stderr for debugging
@@ -142,6 +155,8 @@ export class ACPWrapper {
     async createSession(options: {
         cwd: string;
         mcpServers?: Record<string, any>;
+        systemPrompt?: string;
+        permissionMode?: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan';
     }): Promise<string> {
         if (!this.connection) {
             throw new Error('Connection not established');
@@ -157,9 +172,15 @@ export class ACPWrapper {
               }))
             : undefined;
 
+        const permissionMode = options.permissionMode ?? 'bypassPermissions';
+
         const response = await this.connection.newSession({
             cwd: options.cwd,
             mcpServers: mcpServersArray || [],
+            _meta: {
+                ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
+                permissionMode,
+            },
         });
 
         this.sessionId = response.sessionId;
@@ -180,7 +201,11 @@ export class ACPWrapper {
             throw new Error('No active session');
         }
 
-        this.logger.debug('Sending prompt to ACP agent', { sessionId: this.sessionId });
+        this.logger.debug('Sending prompt to ACP agent', {
+            sessionId: this.sessionId,
+            promptLength: prompt.length,
+            promptPreview: prompt.substring(0, 200)
+        });
 
         const response = await this.connection.prompt({
             sessionId: this.sessionId,
@@ -192,7 +217,9 @@ export class ACPWrapper {
             ],
         });
 
-        this.logger.debug('Prompt completed', { stopReason: response.stopReason });
+        this.logger.debug('Prompt completed', {
+            stopReason: response.stopReason
+        });
     }
 
     /**
@@ -216,13 +243,13 @@ export class ACPWrapper {
     async stop(): Promise<void> {
         this.logger.debug('Stopping ACP wrapper');
 
-        // Clean up any running terminals
         for (const [terminalId, terminal] of this.terminals.entries()) {
             if (terminal.exitCode === undefined && terminal.signal === undefined) {
                 this.logger.debug('Killing terminal on cleanup', { terminalId });
                 terminal.process.kill('SIGTERM');
             }
         }
+        
         this.terminals.clear();
 
         if (this.subprocess) {
@@ -239,10 +266,9 @@ export class ACPWrapper {
      */
     private createClient(): Client {
         return {
-            // Handle session update notifications from the agent
+            // Forward ACP session notifications to agent
             sessionUpdate: async (params: SessionNotification): Promise<void> => {
-                this.logger.debug('Received session update', { type: params.update.sessionUpdate });
-                this.onSessionUpdate(params);
+                this.notificationHandler.sendNotification(params);
             },
 
             // Handle permission requests

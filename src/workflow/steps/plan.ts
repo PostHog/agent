@@ -13,26 +13,23 @@ export const planStep: WorkflowStepRunner = async ({ step, context }) => {
         gitManager,
         promptBuilder,
         mcpServers,
-        emitEvent,
+        agent,
     } = context;
-
-    const stepLogger = logger.child('PlanStep');
 
     const existingPlan = await fileManager.readPlan(task.id);
     if (existingPlan) {
-        stepLogger.info('Plan already exists, skipping step', { taskId: task.id });
+        logger.info('Plan already exists, skipping step', { taskId: task.id });
         return { status: 'skipped' };
     }
 
     const questionsData = await fileManager.readQuestions(task.id);
     if (!questionsData || !questionsData.answered) {
-        stepLogger.info('Waiting for answered research questions', { taskId: task.id });
-        emitEvent({ method: '_posthog/status', params: { type: 'phase_complete', _meta: { phase: 'research_questions' } } });
+        logger.info('Waiting for answered research questions', { taskId: task.id });
+        agent.notifyPhaseComplete('research_questions');
         return { status: 'skipped', halt: true };
     }
 
-    stepLogger.info('Starting planning phase', { taskId: task.id });
-    emitEvent({ method: '_posthog/status', params: { type: 'phase_start', _meta: { phase: 'planning' } } });
+    agent.notifyPhaseStart('planning', { taskId: task.id });
 
     const researchContent = await fileManager.readResearch(task.id);
     let researchContext = '';
@@ -59,23 +56,16 @@ export const planStep: WorkflowStepRunner = async ({ step, context }) => {
     }
 
     const planningPrompt = await promptBuilder.buildPlanningPrompt(task, cwd);
-    const fullPrompt = `${PLANNING_SYSTEM_PROMPT}\n\n${planningPrompt}\n\n${researchContext}`;
 
     const planContent = await runACPStep({
-        logger,
-        cwd,
-        mcpServers,
-        prompt: fullPrompt,
-        onSessionUpdate: (notification) => {
-            stepLogger.debug('Session update', { type: notification.update.sessionUpdate });
-            emitEvent(notification);
-        },
-        currentWrapper: context.currentWrapper,
+        context,
+        systemPrompt: PLANNING_SYSTEM_PROMPT,
+        prompt: `${planningPrompt}\n\n${researchContext}`,
     });
 
     if (planContent.trim()) {
         await fileManager.writePlan(task.id, planContent.trim());
-        stepLogger.info('Plan completed', { taskId: task.id });
+        logger.info('Plan completed', { taskId: task.id });
     }
 
     await gitManager.addAllPostHogFiles();
@@ -84,10 +74,10 @@ export const planStep: WorkflowStepRunner = async ({ step, context }) => {
     });
 
     if (!isCloudMode) {
-        emitEvent({ method: '_posthog/status', params: { type: 'phase_complete', _meta: { phase: 'planning' } } });
+        agent.notifyPhaseComplete('planning');
         return { status: 'completed', halt: true };
     }
 
-    emitEvent({ method: '_posthog/status', params: { type: 'phase_complete', _meta: { phase: 'planning' } } });
+    agent.notifyPhaseComplete('planning');
     return { status: 'completed' };
 };

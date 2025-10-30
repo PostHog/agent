@@ -15,38 +15,32 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
         promptBuilder,
         mcpServers,
         extractor,
-        emitEvent,
+        agent, // Only needed for one special notification
     } = context;
-
-    const stepLogger = logger.child('ResearchStep');
 
     const existingResearch = await fileManager.readResearch(task.id);
     if (existingResearch) {
-        stepLogger.info('Research already exists, skipping step', { taskId: task.id });
+        logger.info('Research already exists, skipping step', { taskId: task.id });
         return { status: 'skipped' };
     }
 
-    stepLogger.info('Starting research phase', { taskId: task.id });
-    emitEvent({ method: '_posthog/status', params: { type: 'phase_start', _meta: { phase: 'research' } } });
+    agent.notifyPhaseStart('research', { taskId: task.id });
 
     const researchPrompt = await promptBuilder.buildResearchPrompt(task, cwd);
-    const fullPrompt = `${RESEARCH_SYSTEM_PROMPT}\n\n${researchPrompt}`;
+    logger.debug('DEBUG: Research prompt being sent', {
+        promptLength: researchPrompt.length,
+        promptPreview: researchPrompt.substring(0, 500)
+    });
 
     const researchContent = await runACPStep({
-        logger,
-        cwd,
-        mcpServers,
-        prompt: fullPrompt,
-        onSessionUpdate: (notification) => {
-            stepLogger.debug('Session update', { type: notification.update.sessionUpdate });
-            emitEvent(notification);
-        },
-        currentWrapper: context.currentWrapper,
+        context,
+        systemPrompt: RESEARCH_SYSTEM_PROMPT,
+        prompt: researchPrompt,
     });
 
     if (researchContent.trim()) {
         await fileManager.writeResearch(task.id, researchContent.trim());
-        stepLogger.info('Research completed', { taskId: task.id });
+        logger.info('Research completed', { taskId: task.id });
     }
 
     await gitManager.addAllPostHogFiles();
@@ -56,7 +50,7 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
 
     if (extractor && researchContent.trim()) {
         try {
-            stepLogger.info('Extracting questions from research.md', { taskId: task.id });
+            logger.info('Extracting questions from research.md', { taskId: task.id });
             const parsedQuestions = await extractor.extractQuestions(researchContent);
 
             await fileManager.writeQuestions(task.id, {
@@ -65,50 +59,26 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
                 answers: null,
             });
 
-            emitEvent({
-                method: '_posthog/artifact',
-                params: {
-                    type: 'research_questions',
-                    _meta: { content: parsedQuestions },
-                },
-            });
+            agent.notifyArtifact('research_questions', parsedQuestions);
 
-            stepLogger.info('Questions extracted successfully', {
+            logger.info('Questions extracted successfully', {
                 taskId: task.id,
                 count: parsedQuestions.length,
             });
         } catch (error) {
-            stepLogger.error('Failed to extract questions', {
-                taskId: task.id,
-                error: error instanceof Error ? error.message : String(error),
-            });
-            emitEvent({
-                method: '_posthog/error',
-                params: {
-                    type: 'extraction_error',
-                    _meta: {
-                        message: `Failed to extract questions: ${
-                            error instanceof Error ? error.message : String(error)
-                        }`,
-                    },
-                },
-            });
+            agent.notifyError('extraction_error', 'Failed to extract questions', error);
         }
     } else if (!extractor) {
-        stepLogger.warn(
+        logger.warn(
             'Question extractor not available, skipping question extraction. Ensure LLM gateway is configured.'
         );
-        emitEvent({
-            method: '_posthog/status',
-            params: {
-                type: 'extraction_skipped',
-                _meta: { message: 'Question extraction skipped - extractor not configured' },
-            },
+        agent.sendPostHogNotification('status', 'extraction_skipped', {
+            message: 'Question extraction skipped - extractor not configured'
         });
     }
 
     if (!isCloudMode) {
-        emitEvent({ method: '_posthog/status', params: { type: 'phase_complete', _meta: { phase: 'research' } } });
+        agent.notifyPhaseComplete('research');
         return { status: 'completed', halt: true };
     }
 
@@ -135,9 +105,9 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
         await finalizeStepGitActions(context, step, {
             commitMessage: `Answer research questions for ${task.title}`,
         });
-        stepLogger.info('Auto-answered research questions', { taskId: task.id });
+        logger.info('Auto-answered research questions', { taskId: task.id });
     }
 
-    emitEvent({ method: '_posthog/status', params: { type: 'phase_complete', _meta: { phase: 'research' } } });
+    agent.notifyPhaseComplete('research');
     return { status: 'completed' };
 };

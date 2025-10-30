@@ -29,11 +29,14 @@ export class Logger {
     private formatMessage(level: string, message: string, data?: any): string {
         const timestamp = new Date().toISOString();
         const base = `${timestamp} ${this.prefix} ${level} ${message}`;
-        
+
         if (data !== undefined) {
-            return `${base} ${JSON.stringify(data, null, 2)}`;
+            // Pretty print JSON but replace escaped newlines with actual newlines
+            const jsonStr = JSON.stringify(data, null, 2);
+            const withRealNewlines = jsonStr.replace(/\\n/g, '\n');
+            return `${base} ${withRealNewlines}`;
         }
-        
+
         return base;
     }
 

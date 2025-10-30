@@ -1,6 +1,6 @@
 
 // import and export to keep a single type file
-import type { CanUseTool, PermissionResult } from '@anthropic-ai/claude-agent-sdk/sdkTypes.js';
+import type { CanUseTool, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 export type { CanUseTool, PermissionResult };
 
 // PostHog Task model (matches Array's OpenAPI schema)
@@ -296,9 +296,47 @@ export type McpServerConfig = {
   instance?: any; // McpServer instance
 };
 
+// Notification types
+export interface PostHogStatusNotification {
+  method: '_posthog/status';
+  params: {
+    type: string;
+    timestamp: number;
+    _meta: Record<string, any>;
+  };
+}
+
+export interface PostHogArtifactNotification {
+  method: '_posthog/artifact';
+  params: {
+    type: string;
+    timestamp: number;
+    _meta: Record<string, any>;
+  };
+}
+
+export interface PostHogErrorNotification {
+  method: '_posthog/error';
+  params: {
+    type: string;
+    timestamp: number;
+    _meta: Record<string, any>;
+  };
+}
+
+export type PostHogNotification =
+  | PostHogStatusNotification
+  | PostHogArtifactNotification
+  | PostHogErrorNotification;
+
+export type AgentNotification =
+  | import('@agentclientprotocol/sdk').SessionNotification
+  | PostHogNotification;
+
+export type NotificationHandler = (notification: AgentNotification) => void;
+
 export interface AgentConfig {
   workingDirectory?: string;
-  onEvent?: (event: AgentEvent) => void;
 
   // PostHog API configuration
   posthogApiUrl?: string;
@@ -314,6 +352,9 @@ export interface AgentConfig {
 
   // Logging configuration
   debug?: boolean;
+
+  // Notification handler - receives all ACP and PostHog notifications
+  onNotification?: NotificationHandler;
 
   // Fine-grained permission control for direct run() calls
   // See: https://docs.claude.com/en/api/agent-sdk/permissions

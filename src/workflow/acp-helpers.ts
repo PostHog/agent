@@ -1,39 +1,43 @@
 import type { SessionNotification } from '@agentclientprotocol/sdk';
 import { ACPWrapper } from '../acp-wrapper.js';
-import type { Logger } from '../utils/logger.js';
+import type { WorkflowRuntime } from './types.js';
 
 export interface RunACPStepOptions {
-    logger: Logger;
-    cwd: string;
-    mcpServers?: Record<string, any>;
+    context: WorkflowRuntime;
+    systemPrompt: string;
     prompt: string;
-    onSessionUpdate: (notification: SessionNotification) => void;
-    currentWrapper?: { wrapper?: ACPWrapper }; // Shared reference for cancellation support
 }
 
 /**
  * Run an ACP session and collect text content from agent messages
  */
 export async function runACPStep(options: RunACPStepOptions): Promise<string> {
-    const { logger, cwd, mcpServers, prompt, onSessionUpdate, currentWrapper } = options;
+    const { context, systemPrompt, prompt } = options;
+    const { logger, cwd, mcpServers, agent, currentWrapper } = context;
 
     const contentCollector: string[] = [];
 
-    const acpWrapper = new ACPWrapper({
-        logger: logger.child('ACPStep'),
-        cwd,
-        onSessionUpdate: (notification: SessionNotification) => {
-            // Forward to caller
-            onSessionUpdate(notification);
+    // Wrap agent to collect text content while forwarding notifications
+    const notificationHandler = {
+        sendNotification: (notification: SessionNotification) => {
+            // Forward notification to agent
+            agent.sendNotification(notification);
 
             // Collect text content from agent message chunks
             if (notification.update.sessionUpdate === 'agent_message_chunk') {
                 const update = notification.update as any;
-                if (update.content?.type === 'text' && update.content?.text) {
+                // ACP protocol: content is a single ContentBlock object
+                if (update.content && update.content.type === 'text' && update.content.text) {
                     contentCollector.push(update.content.text);
                 }
             }
-        },
+        }
+    };
+
+    const acpWrapper = new ACPWrapper({
+        logger: logger.child('ACPStep'),
+        cwd,
+        notificationHandler,
     });
 
     // Store reference for cancellation support
@@ -43,9 +47,15 @@ export async function runACPStep(options: RunACPStepOptions): Promise<string> {
 
     try {
         await acpWrapper.start();
-        await acpWrapper.createSession({ cwd, mcpServers });
+        await acpWrapper.createSession({ cwd, mcpServers, systemPrompt });
         await acpWrapper.prompt(prompt);
-        return contentCollector.join('');
+        const collectedContent = contentCollector.join('');
+        logger.debug('DEBUG: Content collected from agent_message_chunk', {
+            chunkCount: contentCollector.length,
+            totalLength: collectedContent.length,
+            preview: collectedContent.substring(0, 200)
+        });
+        return collectedContent;
     } finally {
         await acpWrapper.stop();
         if (currentWrapper) {

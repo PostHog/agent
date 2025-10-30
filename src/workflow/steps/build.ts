@@ -11,10 +11,8 @@ export const buildStep: WorkflowStepRunner = async ({ step, context }) => {
         promptBuilder,
         mcpServers,
         gitManager,
-        emitEvent,
+        agent,
     } = context;
-
-    const stepLogger = logger.child('BuildStep');
 
     const latestRun = task.latest_run;
     const prExists =
@@ -23,29 +21,21 @@ export const buildStep: WorkflowStepRunner = async ({ step, context }) => {
             : null;
 
     if (prExists) {
-        stepLogger.info('PR already exists, skipping build phase', { taskId: task.id });
+        logger.info('PR already exists, skipping build phase', { taskId: task.id });
         return { status: 'skipped' };
     }
 
-    stepLogger.info('Starting build phase', { taskId: task.id });
-    emitEvent({ method: '_posthog/status', params: { type: 'phase_start', _meta: { phase: 'build' } } });
+    agent.notifyPhaseStart('build', { taskId: task.id });
 
     const executionPrompt = await promptBuilder.buildExecutionPrompt(task, cwd);
-    const fullPrompt = `${EXECUTION_SYSTEM_PROMPT}\n\n${executionPrompt}`;
 
     // Track commits made during Claude Code execution
     const commitTracker = await gitManager.trackCommitsDuring();
 
     await runACPStep({
-        logger,
-        cwd,
-        mcpServers,
-        prompt: fullPrompt,
-        onSessionUpdate: (notification) => {
-            stepLogger.debug('Session update', { type: notification.update.sessionUpdate });
-            emitEvent(notification);
-        },
-        currentWrapper: context.currentWrapper,
+        context,
+        systemPrompt: EXECUTION_SYSTEM_PROMPT,
+        prompt: executionPrompt,
     });
 
     // Finalize: commit any remaining changes and optionally push
@@ -57,14 +47,14 @@ export const buildStep: WorkflowStepRunner = async ({ step, context }) => {
     context.stepResults[step.id] = { commitCreated };
 
     if (!commitCreated) {
-        stepLogger.warn('No changes to commit in build phase', { taskId: task.id });
+        logger.warn('No changes to commit in build phase', { taskId: task.id });
     } else {
-        stepLogger.info('Build commits finalized', {
+        logger.info('Build commits finalized', {
             taskId: task.id,
             pushedBranch
         });
     }
 
-    emitEvent({ method: '_posthog/status', params: { type: 'phase_complete', _meta: { phase: 'build' } } });
+    agent.notifyPhaseComplete('build');
     return { status: 'completed' };
 };
