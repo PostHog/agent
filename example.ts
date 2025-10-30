@@ -20,6 +20,7 @@ async function testAgent() {
         workingDirectory: REPO_PATH,
         posthogApiUrl: process.env.POSTHOG_API_URL || "http://localhost:8010",
         posthogApiKey: process.env.POSTHOG_API_KEY,
+        posthogProjectId: process.env.POSTHOG_PROJECT_ID ? parseInt(process.env.POSTHOG_PROJECT_ID) : 1,
         onEvent: (event) => {
             if (event.type === 'token') {
                 return;

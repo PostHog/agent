@@ -27,6 +27,7 @@ const agent = new Agent({
     workingDirectory: "/path/to/repo",
     posthogApiUrl: "https://app.posthog.com",
     posthogApiKey: process.env.POSTHOG_API_KEY, // Used for both API and MCP
+    posthogProjectId: 1,
     onEvent: (event) => {
       // Streamed updates for responsive UIs
       if (event.type !== 'token') {
@@ -88,6 +89,7 @@ const agent = new Agent({
   workingDirectory: repoPath,
   posthogApiUrl: "https://app.posthog.com",
   posthogApiKey: process.env.POSTHOG_KEY,
+  posthogProjectId: 1,
 });
 
 const poller = setInterval(async () => {
@@ -165,6 +167,7 @@ const agent = new Agent({
   workingDirectory: "/path/to/repo",
   posthogApiUrl: "https://app.posthog.com",
   posthogApiKey: process.env.POSTHOG_API_KEY,
+  posthogProjectId: 1,
   canUseTool: async (toolName, input, { signal, suggestions }) => {
     // Block destructive commands
     if (toolName === 'Bash' && input.command?.includes('rm -rf')) {

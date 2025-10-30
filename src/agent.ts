@@ -81,6 +81,7 @@ export class Agent {
             this.posthogAPI = new PostHogAPIClient({
                 apiUrl: config.posthogApiUrl,
                 apiKey: config.posthogApiKey,
+                projectId: config.posthogProjectId,
             });
         }
 
