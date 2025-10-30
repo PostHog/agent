@@ -15,9 +15,11 @@ export type {
     AgentConfig,
     McpServerConfig,
     AgentNotification,
+    TimestampedSessionNotification,
     PostHogStatusNotification,
     PostHogArtifactNotification,
     PostHogErrorNotification,
+    PostHogTerminalOutputNotification,
     PostHogNotification
 } from './src/types.js';
 
@@ -29,6 +31,12 @@ export {
 export type {
     LoggerConfig
 } from './src/utils/logger.js';
+
+// Notification utilities
+export {
+    ensureTimestamp,
+    getNotificationTimestamp
+} from './src/utils/notification-helpers.js';
 
 // Structured extraction types
 export type {

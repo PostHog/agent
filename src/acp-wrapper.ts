@@ -1,12 +1,12 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { ClientSideConnection, ndJsonStream, type Client, type SessionNotification, type RequestPermissionRequest, type RequestPermissionResponse, type ReadTextFileRequest, type ReadTextFileResponse, type WriteTextFileRequest, type WriteTextFileResponse, type CreateTerminalRequest, type CreateTerminalResponse, type TerminalOutputRequest, type TerminalOutputResponse, type ReleaseTerminalRequest, type ReleaseTerminalResponse, type WaitForTerminalExitRequest, type WaitForTerminalExitResponse, type KillTerminalCommandRequest, type KillTerminalResponse } from '@agentclientprotocol/sdk';
 import type { Logger } from './utils/logger.js';
-import type { PermissionModeValue } from './types.js';
+import type { PermissionModeValue, AgentNotification } from './types.js';
 import { promises as fs } from 'fs';
 import { randomUUID } from 'crypto';
 
 export interface NotificationHandler {
-    sendNotification(notification: SessionNotification): void;
+    sendNotification(notification: AgentNotification): void;
 }
 
 export interface ACPWrapperConfig {
@@ -269,6 +269,7 @@ export class ACPWrapper {
         return {
             // Forward ACP session notifications to agent
             sessionUpdate: async (params: SessionNotification): Promise<void> => {
+                // Forward notification to agent
                 this.notificationHandler.sendNotification(params);
             },
 
@@ -346,21 +347,27 @@ export class ACPWrapper {
                     exitResolvers: [],
                 };
 
-                // Collect stdout
+                // Collect stdout and emit notifications on data
                 if (proc.stdout) {
                     proc.stdout.on('data', (data: Buffer) => {
                         terminalState.output.push(data.toString());
+
+                        // Event-driven: emit notification immediately when output arrives
+                        this.emitTerminalOutputNotification(terminalId, false);
                     });
                 }
 
-                // Collect stderr
+                // Collect stderr and emit notifications on data
                 if (proc.stderr) {
                     proc.stderr.on('data', (data: Buffer) => {
                         terminalState.output.push(data.toString());
+
+                        // Event-driven: emit notification immediately when output arrives
+                        this.emitTerminalOutputNotification(terminalId, false);
                     });
                 }
 
-                // Handle exit
+                // Handle exit and emit final notification
                 proc.on('exit', (code: number | null, signal: string | null) => {
                     terminalState.exitCode = code ?? undefined;
                     terminalState.signal = signal ?? undefined;
@@ -372,6 +379,9 @@ export class ACPWrapper {
                     terminalState.exitResolvers = [];
 
                     this.logger.debug('Terminal exited', { terminalId, exitCode: code, signal });
+
+                    // Event-driven: emit final notification with isComplete: true
+                    this.emitTerminalOutputNotification(terminalId, true);
                 });
 
                 this.terminals.set(terminalId, terminalState);
@@ -463,8 +473,38 @@ export class ACPWrapper {
 
                 // Remove from map
                 this.terminals.delete(params.terminalId);
+
                 return {};
             },
         };
+    }
+
+    /**
+     * Emit terminal output notification (event-driven, called from stdout/stderr/exit events)
+     */
+    private emitTerminalOutputNotification(terminalId: string, isComplete: boolean): void {
+        const terminal = this.terminals.get(terminalId);
+        if (!terminal) {
+            return;
+        }
+
+        const currentOutput = terminal.output.join('');
+
+        // Emit notification with current output
+        const notification = {
+            method: '_posthog/terminal_output' as const,
+            params: {
+                terminalId,
+                output: currentOutput,
+                exitCode: terminal.exitCode,
+                signal: terminal.signal,
+                isComplete,
+                timestamp: Date.now(),
+                _meta: {},
+            },
+        };
+
+        // Send as custom notification
+        this.notificationHandler.sendNotification(notification);
     }
 }

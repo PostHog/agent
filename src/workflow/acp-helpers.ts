@@ -19,12 +19,13 @@ export async function runACPStep(options: RunACPStepOptions): Promise<string> {
 
     // Wrap agent to collect text content while forwarding notifications
     const notificationHandler = {
-        sendNotification: (notification: SessionNotification) => {
+        sendNotification: (notification: SessionNotification | any) => {
             // Forward notification to agent
             agent.sendNotification(notification);
 
             // Collect text content from agent message chunks
-            if (notification.update.sessionUpdate === 'agent_message_chunk') {
+            // Only process if it's a SessionNotification (has 'update' field)
+            if ('update' in notification && notification.update?.sessionUpdate === 'agent_message_chunk') {
                 const update = notification.update as any;
                 // ACP protocol: content is a single ContentBlock object
                 if (update.content && update.content.type === 'text' && update.content.text) {

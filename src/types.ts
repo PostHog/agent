@@ -138,6 +138,10 @@ export interface PostHogStatusNotification {
     timestamp: number;
     _meta: Record<string, any>;
   };
+  _meta?: {
+    timestamp?: number;
+    [k: string]: unknown;
+  };
 }
 
 export interface PostHogArtifactNotification {
@@ -146,6 +150,10 @@ export interface PostHogArtifactNotification {
     type: string;
     timestamp: number;
     _meta: Record<string, any>;
+  };
+  _meta?: {
+    timestamp?: number;
+    [k: string]: unknown;
   };
 }
 
@@ -156,13 +164,55 @@ export interface PostHogErrorNotification {
     timestamp: number;
     _meta: Record<string, any>;
   };
+  _meta?: {
+    timestamp?: number;
+    [k: string]: unknown;
+  };
+}
+
+export interface PostHogTerminalOutputNotification {
+  method: '_posthog/terminal_output';
+  params: {
+    terminalId: string;
+    output: string;
+    exitCode?: number;
+    signal?: string;
+    isComplete: boolean;
+    timestamp: number;
+    _meta: Record<string, any>;
+  };
+  _meta?: {
+    timestamp?: number;
+    [k: string]: unknown;
+  };
 }
 
 export type PostHogNotification =
   | PostHogStatusNotification
   | PostHogArtifactNotification
-  | PostHogErrorNotification;
+  | PostHogErrorNotification
+  | PostHogTerminalOutputNotification;
 
+// Base type helper: adds timestamp to _meta if it doesn't exist
+export type WithTimestamp<T> = T extends { _meta?: infer M }
+  ? Omit<T, '_meta'> & {
+      _meta: (M extends Record<string, any> ? M : {}) & {
+        timestamp?: number;
+      };
+    }
+  : T & {
+      _meta?: {
+        timestamp?: number;
+        [k: string]: unknown;
+      };
+    };
+
+// ACP SessionNotification that may have timestamp in _meta
+export type TimestampedSessionNotification = WithTimestamp<
+  import('@agentclientprotocol/sdk').SessionNotification
+>;
+
+// All agent notifications - may have timestamps but not required
 export type AgentNotification =
   | import('@agentclientprotocol/sdk').SessionNotification
   | PostHogNotification;
