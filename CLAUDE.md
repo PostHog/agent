@@ -106,7 +106,8 @@ Note: No test, lint, or build scripts are currently defined in package.json.
 const agent = new Agent({ 
     workingDirectory: "/path/to/repo",
     posthogApiUrl: "https://app.posthog.com",
-    posthogApiKey: process.env.POSTHOG_API_KEY
+    posthogApiKey: process.env.POSTHOG_API_KEY,
+    posthogProjectId: 1
 });
 
 // Fetch existing PostHog task
@@ -227,7 +228,8 @@ Each task execution creates specific Git branches:
 const agent = new Agent({
     workingDirectory: "/path/to/repo",
     posthogApiUrl: "https://app.posthog.com",
-    posthogApiKey: process.env.POSTHOG_API_KEY
+    posthogApiKey: process.env.POSTHOG_API_KEY,
+    posthogProjectId: 1
 });
 
 // 2. Fetch existing task from PostHog

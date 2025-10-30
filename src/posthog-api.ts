@@ -68,20 +68,7 @@ export class PostHogAPIClient {
   }
 
   async getTeamId(): Promise<number> {
-    if (this._teamId !== null) {
-      return this._teamId;
-    }
-
-    // Fetch user info to get team ID (following Array's pattern)
-    const userResponse = await this.apiRequest<any>('/api/users/@me/');
-
-    if (!userResponse.team?.id) {
-      throw new Error('No team found for user');
-    }
-
-    const teamId = Number(userResponse.team.id);
-    this._teamId = teamId;
-    return teamId;
+    return this.config.projectId;
   }
 
   getBaseUrl(): string {

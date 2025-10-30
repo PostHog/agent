@@ -303,9 +303,11 @@ export interface AgentConfig {
   // PostHog API configuration
   posthogApiUrl: string;
   posthogApiKey: string;
+  posthogProjectId: number;
 
   // PostHog MCP configuration
   posthogMcpUrl?: string;
+
 
   // MCP Server configuration
   // Additional MCP servers (PostHog MCP is always included by default)
@@ -323,6 +325,7 @@ export interface AgentConfig {
 export interface PostHogAPIConfig {
   apiUrl: string;
   apiKey: string;
+  projectId: number;
 }
 
 // URL mention types
