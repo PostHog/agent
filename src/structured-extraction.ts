@@ -43,7 +43,7 @@ export interface StructuredExtractor {
 
 export type StructuredExtractorConfig = {
   apiKey: string;
-  baseURL: string;
+  gatewayUrl: string;
   modelName?: string;
   logger?: Logger;
 }
@@ -61,13 +61,13 @@ export class AISDKExtractor implements StructuredExtractor {
 
     this.model = getAnthropicModel({
       apiKey: config.apiKey,
-      baseURL: config.baseURL,
+      gatewayUrl: config.gatewayUrl,
       modelName: config.modelName || 'claude-haiku-4-5',
     });
 
     this.logger.debug('Using PostHog LLM gateway for structured extraction', {
       modelName: config.modelName || 'claude-haiku-4-5',
-      baseURL: config.baseURL
+      gatewayUrl: config.gatewayUrl
     });
   }
 
