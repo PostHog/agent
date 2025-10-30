@@ -1,5 +1,4 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
-import type { AnthropicMessagesModelId } from '@ai-sdk/anthropic';
 
 export interface PostHogGatewayConfig {
   apiKey: string;
@@ -40,8 +39,9 @@ export function getAnthropicModel(config: PostHogGatewayConfig) {
   const anthropic = createAnthropic({
     apiKey: config.apiKey,
     baseURL,
+    //@ts-ignore
     fetch: customFetch,
   });
 
-  return anthropic(modelName as AnthropicMessagesModelId);
+  return anthropic(modelName);
 }
