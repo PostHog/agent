@@ -11,7 +11,6 @@ import { AISDKExtractor, type StructuredExtractor, type ExtractedQuestion, type 
 import { TASK_WORKFLOW } from './workflow/config.js';
 import type { WorkflowRuntime } from './workflow/types.js';
 import { ACPWrapper } from './acp-wrapper.js';
-import type { SessionNotification } from '@agentclientprotocol/sdk';
 
 export class Agent {
     private workingDirectory: string;
@@ -133,7 +132,7 @@ export class Agent {
 
     // Adaptive task execution orchestrated via workflow steps
     async runTask(taskOrId: Task | string, options: import('./types.js').TaskExecutionOptions = {}): Promise<void> {
-        // await this._configureLlmGateway();
+        await this._configureLlmGateway();
 
         const task = typeof taskOrId === 'string' ? await this.fetchTask(taskOrId) : taskOrId;
         const cwd = options.repositoryPath || this.workingDirectory;
@@ -199,7 +198,7 @@ export class Agent {
 
     // Direct prompt execution via ACP
     async run(prompt: string, options: { repositoryPath?: string; permissionMode?: import('./types.js').PermissionMode; queryOverrides?: Record<string, any>; canUseTool?: CanUseTool } = {}): Promise<ExecutionResult> {
-        // await this._configureLlmGateway();
+        await this._configureLlmGateway();
 
         const cwd = options.repositoryPath || this.workingDirectory;
 

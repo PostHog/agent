@@ -21,17 +21,15 @@ bun run example
 
 ```typescript
 import { Agent, PermissionMode } from '@posthog/agent';
-import type { AgentEvent } from '@posthog/agent';
+import type { AgentNotification } from '@posthog/agent';
 
 const agent = new Agent({
     workingDirectory: "/path/to/repo",
     posthogApiUrl: "https://app.posthog.com",
     posthogApiKey: process.env.POSTHOG_API_KEY, // Used for both API and MCP
-    onEvent: (event) => {
-      // Streamed updates for responsive UIs
-      if (event.type !== 'token') {
-        handleLiveEvent(event);
-      }
+    onNotification: (notification) => {
+      // ACP notifications for responsive UIs
+      handleNotification(notification);
     },
 });
 
@@ -106,22 +104,14 @@ try {
   clearInterval(poller);
 }
 
-// Live stream still available through the onEvent hook
-function handleLiveEvent(event: AgentEvent) {
-  switch (event.type) {
-    case 'status':
-      // optimistic UI update
-      break;
-    case 'error':
-      notifyError(event.message);
-      break;
-    default:
-      break;
-  }
+// Handle ACP notifications
+function handleNotification(notification: AgentNotification) {
+  // Process ACP SessionNotifications and PostHog custom notifications
+  console.log('Received notification:', notification);
 }
 ```
 
-> Prefer streaming updates? Pass an `onEvent` handler when constructing the agent to keep receiving real-time events while progress is also written to PostHog.
+> Want real-time updates? Pass an `onNotification` handler when constructing the agent to receive ACP notifications while progress is also written to PostHog.
 
 ## Requirements
 

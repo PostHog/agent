@@ -14,7 +14,7 @@ export type {
     ExecutionResult,
     AgentConfig,
     McpServerConfig,
-    AgentEvent
+    AgentNotification
 } from './src/types.js';
 
 export {
@@ -39,10 +39,6 @@ export type {
     AnswerData,
     QuestionsFile
 } from './src/file-manager.js';
-
-// Provider adapter types
-export type { ProviderAdapter } from './src/adapters/types.js';
-export { ClaudeAdapter } from './src/adapters/claude/claude-adapter.js';
 
 // Tool types
 export type {

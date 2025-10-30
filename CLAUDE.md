@@ -26,7 +26,7 @@ Note: No test, lint, or build scripts are currently defined in package.json.
    - Main interface to Claude API using `@anthropic-ai/claude-agent-sdk`
    - Supports three execution modes: PLAN_AND_BUILD, PLAN_ONLY, BUILD_ONLY
    - Git-based workflow with branch creation and commits
-   - Event streaming with Array-compatible event format
+   - ACP notification streaming for UI updates
    - Default model: claude-4-5-sonnet
 
 2. **PostHog API Client** (`src/posthog-api.ts`):
@@ -54,16 +54,12 @@ Note: No test, lint, or build scripts are currently defined in package.json.
    - Manages timeouts and cancellation
    - Does not store task data - only execution state
 
-3. **Event System** (`src/event-transformer.ts`):
-   - Maps Claude SDK events to Array's expected format
-   - Supports: token, status, tool_call, tool_result, diff, file_write, metric, artifact, error, done
-
-4. **System Prompts** (`src/agents/` directory):
+7. **System Prompts** (`src/agents/` directory):
    - `planning.ts`: System prompt for planning mode (read-only analysis)
    - `execution.ts`: System prompt for execution mode (implementation)
    - `ENGINEER.md`: Legacy prompt template (kept for reference)
 
-5. **Entry Point** (`index.ts`):
+8. **Entry Point** (`index.ts`):
    - Re-exports all public APIs from src
    - Clean import interface for consumers
 
@@ -73,7 +69,7 @@ Note: No test, lint, or build scripts are currently defined in package.json.
 - **Plan-and-Execute Workflow**: Planning phase generates plans stored in .posthog/ folders
 - **File System Storage**: Task artifacts stored in .posthog/{taskId}/ directories
 - **PostHog Integration**: Fetches existing tasks from PostHog API, doesn't create new ones
-- **Event Streaming**: Real-time event streaming compatible with Array app
+- **ACP Notifications**: Real-time AgentClientProtocol notifications for UI updates
 - **Permission Modes**: Support for plan, default, acceptEdits, bypassPermissions
 
 ### Project Structure
@@ -90,7 +86,6 @@ Note: No test, lint, or build scripts are currently defined in package.json.
     ├── git-manager.ts          # Git operations and branch management
     ├── template-manager.ts     # Plan and context templates
     ├── task-manager.ts         # Execution state tracking
-    ├── event-transformer.ts    # Event mapping logic
     ├── agents/                 # System prompts
     │   ├── planning.ts         # Planning mode system prompt
     │   └── execution.ts        # Execution mode system prompt
@@ -135,21 +130,15 @@ try {
 }
 ```
 
-> The agent still emits transformed events via the `onEvent` callback, so UI layers can combine streaming updates with periodic polling if desired.
+> The agent emits ACP notifications via the `onNotification` callback, so UI layers can combine streaming updates with periodic polling if desired.
 
 ```typescript
-// Handle the hook provided when constructing the Agent
-import type { AgentEvent } from '@posthog/agent';
+// Handle ACP notifications when constructing the Agent
+import type { AgentNotification } from '@posthog/agent';
 
-private handleLiveEvent(event: AgentEvent) {
-    switch (event.type) {
-        case 'status':
-            this.updateUI(event.phase, event.stage);
-            break;
-        case 'error':
-            this.showError(event.message);
-            break;
-    }
+private handleNotification(notification: AgentNotification) {
+    // Process ACP SessionNotifications and PostHog custom notifications
+    console.log('Received notification:', notification);
 }
 ```
 
@@ -325,5 +314,5 @@ try {
 - **Branch Creation**: Fast Git operations using local commands
 - **File I/O**: Efficient `.posthog/` folder management with minimal disk usage
 - **API Calls**: Cached PostHog task data to minimize network requests
-- **Event Streaming**: Real-time updates without blocking execution
+- **ACP Notifications**: Real-time updates without blocking execution
 - **Template Processing**: Lazy-loaded templates with variable substitution
