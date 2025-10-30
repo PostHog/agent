@@ -67,7 +67,7 @@ export class PostHogAPIClient {
     return response.json();
   }
 
-  async getTeamId(): Promise<number> {
+  getTeamId(): number {
     return this.config.projectId;
   }
 
@@ -79,13 +79,13 @@ export class PostHogAPIClient {
     return this.config.apiKey;
   }
 
-  async getLlmGatewayUrl(): Promise<string> {
-    const teamId = await this.getTeamId();
+  getLlmGatewayUrl(): string {
+    const teamId = this.getTeamId();
     return `${this.baseUrl}/api/projects/${teamId}/llm_gateway`;
   }
 
   async fetchTask(taskId: string): Promise<Task> {
-    const teamId = await this.getTeamId();
+    const teamId = this.getTeamId();
     return this.apiRequest<Task>(`/api/projects/${teamId}/tasks/${taskId}/`);
   }
 
@@ -94,7 +94,7 @@ export class PostHogAPIClient {
     organization?: string;
     origin_product?: string;
   }): Promise<Task[]> {
-    const teamId = await this.getTeamId();
+    const teamId = this.getTeamId();
     const url = new URL(`${this.baseUrl}/api/projects/${teamId}/tasks/`);
     
     if (filters) {
@@ -111,7 +111,7 @@ export class PostHogAPIClient {
   }
 
   async updateTask(taskId: string, updates: Partial<Task>): Promise<Task> {
-    const teamId = await this.getTeamId();
+    const teamId = this.getTeamId();
     return this.apiRequest<Task>(`/api/projects/${teamId}/tasks/${taskId}/`, {
       method: 'PATCH',
       body: JSON.stringify(updates),
@@ -120,7 +120,7 @@ export class PostHogAPIClient {
 
   // TaskRun methods
   async listTaskRuns(taskId: string): Promise<TaskRun[]> {
-    const teamId = await this.getTeamId();
+    const teamId = this.getTeamId();
     const response = await this.apiRequest<PostHogApiResponse<TaskRun>>(
       `/api/projects/${teamId}/tasks/${taskId}/runs/`
     );
@@ -128,7 +128,7 @@ export class PostHogAPIClient {
   }
 
   async getTaskRun(taskId: string, runId: string): Promise<TaskRun> {
-    const teamId = await this.getTeamId();
+    const teamId = this.getTeamId();
     return this.apiRequest<TaskRun>(`/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/`);
   }
 
@@ -136,7 +136,7 @@ export class PostHogAPIClient {
     taskId: string,
     payload?: Partial<Omit<TaskRun, 'id' | 'task' | 'team' | 'created_at' | 'updated_at' | 'completed_at'>>
   ): Promise<TaskRun> {
-    const teamId = await this.getTeamId();
+    const teamId = this.getTeamId();
     return this.apiRequest<TaskRun>(`/api/projects/${teamId}/tasks/${taskId}/runs/`, {
       method: "POST",
       body: JSON.stringify(payload || {}),
@@ -148,7 +148,7 @@ export class PostHogAPIClient {
     runId: string,
     payload: TaskRunUpdate
   ): Promise<TaskRun> {
-    const teamId = await this.getTeamId();
+    const teamId = this.getTeamId();
     return this.apiRequest<TaskRun>(`/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/`, {
       method: "PATCH",
       body: JSON.stringify(payload),
@@ -156,7 +156,7 @@ export class PostHogAPIClient {
   }
 
   async setTaskRunOutput(taskId: string, runId: string, output: Record<string, unknown>): Promise<TaskRun> {
-    const teamId = await this.getTeamId();
+    const teamId = this.getTeamId();
     return this.apiRequest<TaskRun>(`/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/set_output/`, {
       method: 'PATCH',
       body: JSON.stringify({ output }),
@@ -164,7 +164,7 @@ export class PostHogAPIClient {
   }
 
   async appendTaskRunLog(taskId: string, runId: string, entries: LogEntry[]): Promise<TaskRun> {
-    const teamId = await this.getTeamId();
+    const teamId = this.getTeamId();
     return this.apiRequest<TaskRun>(`/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/append_log/`, {
       method: 'POST',
       body: JSON.stringify({ entries }),
@@ -175,7 +175,7 @@ export class PostHogAPIClient {
    * Fetch error details from PostHog error tracking
    */
   async fetchErrorDetails(errorId: string, projectId?: string): Promise<PostHogResource> {
-    const teamId = projectId ? parseInt(projectId) : await this.getTeamId();
+    const teamId = projectId ? parseInt(projectId) : this.getTeamId();
     
     try {
       const errorData = await this.apiRequest<any>(`/api/projects/${teamId}/error_tracking/${errorId}/`);

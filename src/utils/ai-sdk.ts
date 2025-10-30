@@ -2,7 +2,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 
 export interface PostHogGatewayConfig {
   apiKey: string;
-  baseURL: string;
+  gatewayUrl: string;
   modelName?: string;
 }
 
@@ -18,7 +18,7 @@ export function getAnthropicModel(config: PostHogGatewayConfig) {
   
   // PostHog gateway expects /v1/messages, but AI SDK appends /messages
   // So we need to append /v1 to the baseURL
-  const baseURL = config.baseURL ? `${config.baseURL}/v1` : undefined;
+  const baseURL = config.gatewayUrl ? `${config.gatewayUrl}/v1` : undefined;
 
   // Custom fetch to convert x-api-key header to Authorization Bearer
   // PostHog gateway expects Bearer token, but Anthropic SDK sends x-api-key
