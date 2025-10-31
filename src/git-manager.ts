@@ -96,6 +96,28 @@ export class GitManager {
     await this.runGitCommand(`checkout ${branchName}`);
   }
 
+  async resetToDefaultBranchIfNeeded(): Promise<boolean> {
+    const currentBranch = await this.getCurrentBranch();
+    const defaultBranch = await this.getDefaultBranch();
+
+    if (currentBranch === defaultBranch) {
+      this.logger.debug('Already on default branch', { branch: defaultBranch });
+      return true;
+    }
+
+    if (await this.hasChanges()) {
+      this.logger.warn('Skipping branch reset - uncommitted changes present', {
+        currentBranch,
+        defaultBranch
+      });
+      return false;
+    }
+
+    await this.switchToBranch(defaultBranch);
+    this.logger.info('Reset to default branch', { from: currentBranch, to: defaultBranch });
+    return true;
+  }
+
   async createOrSwitchToBranch(branchName: string, baseBranch?: string): Promise<void> {
     await this.ensureCleanWorkingDirectory('switching branches');
 
