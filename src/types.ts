@@ -1,6 +1,6 @@
 
 // import and export to keep a single type file
-import type { CanUseTool, PermissionResult } from '@anthropic-ai/claude-agent-sdk/sdkTypes.js';
+import type { CanUseTool, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 export type { CanUseTool, PermissionResult };
 
 // PostHog Task model (matches Array's OpenAPI schema)
@@ -55,6 +55,12 @@ export interface SupportingFile {
   created_at: string;
 }
 
+export interface WorktreeInfo {
+  path: string;
+  branch: string;
+  commit: string;
+}
+
 export enum PermissionMode {
   PLAN = "plan",
   DEFAULT = "default",
@@ -77,6 +83,8 @@ export interface TaskExecutionOptions {
   // Fine-grained permission control (only applied to build phase)
   // See: https://docs.claude.com/en/api/agent-sdk/permissions
   canUseTool?: CanUseTool;
+  // Git worktree options for concurrent task execution
+  useWorktree?: boolean; // Whether to use git worktrees for isolation (default: true, enables concurrent tasks)
 }
 
 // Base event with timestamp
