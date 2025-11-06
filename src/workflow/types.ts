@@ -6,7 +6,6 @@ import type { PromptBuilder } from '../prompt-builder.js';
 import type { TaskProgressReporter } from '../task-progress-reporter.js';
 import type { ProviderAdapter } from '../adapters/types.js';
 import type { PostHogAPIClient } from '../posthog-api.js';
-import type { StructuredExtractor } from '../structured-extraction.js';
 
 export interface WorkflowRuntime {
     task: Task;
@@ -22,7 +21,6 @@ export interface WorkflowRuntime {
     adapter: ProviderAdapter;
     mcpServers?: Record<string, any>;
     posthogAPI?: PostHogAPIClient;
-    extractor?: StructuredExtractor;
     emitEvent: (event: any) => void;
     stepResults: Record<string, any>;
 }

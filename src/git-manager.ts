@@ -135,7 +135,13 @@ export class GitManager {
   }
 
   async addAllPostHogFiles(): Promise<void> {
-    await this.runGitCommand('add .posthog/');
+    try {
+      // Use -A flag to add all changes (including new files) and ignore errors if directory is empty
+      await this.runGitCommand('add -A .posthog/');
+    } catch (error) {
+      // If the directory doesn't exist or has no files, that's fine - just log and continue
+      this.logger.debug('No PostHog files to add', { error });
+    }
   }
 
   async commitChanges(message: string, options?: {

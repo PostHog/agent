@@ -1,7 +1,7 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { RESEARCH_SYSTEM_PROMPT } from '../../agents/research.js';
-import type { ExtractedQuestionWithAnswer } from '../../structured-extraction.js';
 import type { WorkflowStepRunner } from '../types.js';
+import type { ResearchEvaluation } from '../../types.js';
 import { finalizeStepGitActions } from '../utils.js';
 
 export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
@@ -16,7 +16,6 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
         promptBuilder,
         adapter,
         mcpServers,
-        extractor,
         emitEvent,
     } = context;
 
@@ -24,7 +23,29 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
 
     const existingResearch = await fileManager.readResearch(task.id);
     if (existingResearch) {
-        stepLogger.info('Research already exists, skipping step', { taskId: task.id });
+        stepLogger.info('Research already exists', { taskId: task.id, hasQuestions: !!existingResearch.questions, answered: existingResearch.answered });
+        
+        // If there are unanswered questions, re-emit them so UI can prompt user
+        if (existingResearch.questions && !existingResearch.answered) {
+            stepLogger.info('Re-emitting unanswered research questions', { 
+                taskId: task.id,
+                questionCount: existingResearch.questions.length 
+            });
+            
+            emitEvent({
+                type: 'artifact',
+                ts: Date.now(),
+                kind: 'research_questions',
+                content: existingResearch.questions,
+            });
+            
+            // In local mode, halt to allow user to answer
+            if (!isCloudMode) {
+                emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'research' }));
+                return { status: 'skipped', halt: true };
+            }
+        }
+        
         return { status: 'skipped' };
     }
 
@@ -59,7 +80,7 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
         options: { ...baseOptions, ...(options.queryOverrides || {}) },
     });
 
-    let researchContent = '';
+    let jsonContent = '';
     for await (const message of response) {
         emitEvent(adapter.createRawSDKEvent(message));
         const transformed = adapter.transform(message);
@@ -69,100 +90,114 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
         if (message.type === 'assistant' && message.message?.content) {
             for (const c of message.message.content) {
                 if (c.type === 'text' && c.text) {
-                    researchContent += `${c.text}\n`;
+                    jsonContent += c.text;
                 }
             }
         }
     }
 
-    if (researchContent.trim()) {
-        await fileManager.writeResearch(task.id, researchContent.trim());
-        stepLogger.info('Research completed', { taskId: task.id });
+    if (!jsonContent.trim()) {
+        stepLogger.error('No JSON output from research agent', { taskId: task.id });
+        emitEvent({
+            type: 'error',
+            ts: Date.now(),
+            message: 'Research agent returned no output',
+        });
+        return { status: 'completed', halt: true };
     }
+
+    // Parse JSON response
+    let evaluation: ResearchEvaluation;
+    try {
+        // Extract JSON from potential markdown code blocks or other wrapping
+        const jsonMatch = jsonContent.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            throw new Error('No JSON object found in response');
+        }
+        evaluation = JSON.parse(jsonMatch[0]);
+        stepLogger.info('Parsed research evaluation', {
+            taskId: task.id,
+            score: evaluation.actionabilityScore,
+            hasQuestions: !!evaluation.questions,
+        });
+    } catch (error) {
+        stepLogger.error('Failed to parse research JSON', {
+            taskId: task.id,
+            error: error instanceof Error ? error.message : String(error),
+            content: jsonContent.substring(0, 500),
+        });
+        emitEvent({
+            type: 'error',
+            ts: Date.now(),
+            message: `Failed to parse research JSON: ${
+                error instanceof Error ? error.message : String(error)
+            }`,
+        });
+        return { status: 'completed', halt: true };
+    }
+
+    // Add answered/answers fields to evaluation
+    if (evaluation.questions && evaluation.questions.length > 0) {
+        evaluation.answered = false;
+        evaluation.answers = undefined;
+    }
+
+    // Always write research.json
+    await fileManager.writeResearch(task.id, evaluation);
+    stepLogger.info('Research evaluation written', {
+        taskId: task.id,
+        score: evaluation.actionabilityScore,
+        hasQuestions: !!evaluation.questions,
+    });
+
+    emitEvent({
+        type: 'artifact',
+        ts: Date.now(),
+        kind: 'research_evaluation',
+        content: evaluation,
+    });
 
     await gitManager.addAllPostHogFiles();
     await finalizeStepGitActions(context, step, {
         commitMessage: `Research phase for ${task.title}`,
     });
 
-    if (extractor && researchContent.trim()) {
-        try {
-            stepLogger.info('Extracting questions from research.md', { taskId: task.id });
-            const parsedQuestions = await extractor.extractQuestions(researchContent);
-
-            await fileManager.writeQuestions(task.id, {
-                questions: parsedQuestions,
-                answered: false,
-                answers: null,
-            });
-
-            emitEvent({
-                type: 'artifact',
-                ts: Date.now(),
-                kind: 'research_questions',
-                content: parsedQuestions,
-            });
-
-            stepLogger.info('Questions extracted successfully', {
-                taskId: task.id,
-                count: parsedQuestions.length,
-            });
-        } catch (error) {
-            stepLogger.error('Failed to extract questions', {
-                taskId: task.id,
-                error: error instanceof Error ? error.message : String(error),
-            });
-            emitEvent({
-                type: 'error',
-                ts: Date.now(),
-                message: `Failed to extract questions: ${
-                    error instanceof Error ? error.message : String(error)
-                }`,
-            });
-        }
-    } else if (!extractor) {
-        stepLogger.warn(
-            'Question extractor not available, skipping question extraction. Ensure LLM gateway is configured.'
-        );
+    // Log whether questions need answering
+    if (evaluation.actionabilityScore < 0.7 && evaluation.questions && evaluation.questions.length > 0) {
+        stepLogger.info('Actionability score below threshold, questions needed', {
+            taskId: task.id,
+            score: evaluation.actionabilityScore,
+            questionCount: evaluation.questions.length,
+        });
+        
         emitEvent({
-            type: 'status',
+            type: 'artifact',
             ts: Date.now(),
-            phase: 'extraction_skipped',
-            message: 'Question extraction skipped - extractor not configured',
+            kind: 'research_questions',
+            content: evaluation.questions,
+        });
+    } else {
+        stepLogger.info('Actionability score acceptable, proceeding to planning', {
+            taskId: task.id,
+            score: evaluation.actionabilityScore,
         });
     }
 
+    // In local mode, always halt after research for user review
     if (!isCloudMode) {
         emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'research' }));
         return { status: 'completed', halt: true };
     }
 
-    const questionsData = await fileManager.readQuestions(task.id);
-    if (questionsData && !questionsData.answered && extractor && researchContent.trim()) {
-        const researchQuestions = await extractor.extractQuestionsWithAnswers(researchContent);
-        const answers = (researchQuestions as ExtractedQuestionWithAnswer[]).map((qa) => ({
-            questionId: qa.id,
-            selectedOption: qa.recommendedAnswer,
-            customInput: qa.justification,
-        }));
-
-        await fileManager.writeQuestions(task.id, {
-            questions: researchQuestions.map((qa) => ({
-                id: qa.id,
-                question: qa.question,
-                options: qa.options,
-            })),
-            answered: true,
-            answers,
-        });
-
-        await gitManager.addAllPostHogFiles();
-        await finalizeStepGitActions(context, step, {
-            commitMessage: `Answer research questions for ${task.title}`,
-        });
-        stepLogger.info('Auto-answered research questions', { taskId: task.id });
+    // In cloud mode, check if questions need answering
+    const researchData = await fileManager.readResearch(task.id);
+    if (researchData?.questions && !researchData.answered) {
+        // Questions need answering - halt for user input in cloud mode too
+        emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'research' }));
+        return { status: 'completed', halt: true };
     }
 
+    // No questions or questions already answered - proceed to planning
     emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'research' }));
     return { status: 'completed' };
 };

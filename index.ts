@@ -14,7 +14,8 @@ export type {
     ExecutionResult,
     AgentConfig,
     McpServerConfig,
-    AgentEvent
+    AgentEvent,
+    ResearchEvaluation
 } from './src/types.js';
 
 export {
@@ -25,20 +26,6 @@ export {
 export type {
     LoggerConfig
 } from './src/utils/logger.js';
-
-// Structured extraction types
-export type {
-    ExtractedQuestion,
-    ExtractedQuestionWithAnswer,
-    StructuredExtractor
-} from './src/structured-extraction.js';
-
-// File manager types
-export type {
-    QuestionData,
-    AnswerData,
-    QuestionsFile
-} from './src/file-manager.js';
 
 // Provider adapter types
 export type { ProviderAdapter } from './src/adapters/types.js';

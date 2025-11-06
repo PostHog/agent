@@ -1,6 +1,6 @@
 
 // import and export to keep a single type file
-import type { CanUseTool, PermissionResult } from '@anthropic-ai/claude-agent-sdk/sdkTypes.js';
+import type { CanUseTool, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 export type { CanUseTool, PermissionResult };
 
 // PostHog Task model (matches Array's OpenAPI schema)
@@ -345,4 +345,27 @@ export interface UrlMention {
   type: ResourceType;
   id?: string;
   label?: string;
+}
+
+// Research evaluation types
+export interface ResearchQuestion {
+  id: string;
+  question: string;
+  options: string[];
+}
+
+export interface ResearchAnswer {
+  questionId: string;
+  selectedOption: string;
+  customInput?: string;
+}
+
+export interface ResearchEvaluation {
+  actionabilityScore: number;    // 0-1 confidence score
+  context: string;               // brief summary for planning
+  keyFiles: string[];            // files needing modification
+  blockers?: string[];           // what's preventing full confidence
+  questions?: ResearchQuestion[]; // only if score < 0.7
+  answered?: boolean;            // whether questions have been answered
+  answers?: ResearchAnswer[];    // user's answers to questions
 }
