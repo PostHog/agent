@@ -1,6 +1,7 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { RESEARCH_SYSTEM_PROMPT } from '../../agents/research.js';
 import type { WorkflowStepRunner } from '../types.js';
+import type { ResearchEvaluation } from '../../types.js';
 import { finalizeStepGitActions } from '../utils.js';
 
 export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
@@ -20,9 +21,31 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
 
     const stepLogger = logger.child('ResearchStep');
 
-    const existingEval = await fileManager.readEval(task.id);
-    if (existingEval) {
-        stepLogger.info('Eval already exists, skipping step', { taskId: task.id });
+    const existingResearch = await fileManager.readResearch(task.id);
+    if (existingResearch) {
+        stepLogger.info('Research already exists', { taskId: task.id, hasQuestions: !!existingResearch.questions, answered: existingResearch.answered });
+        
+        // If there are unanswered questions, re-emit them so UI can prompt user
+        if (existingResearch.questions && !existingResearch.answered) {
+            stepLogger.info('Re-emitting unanswered research questions', { 
+                taskId: task.id,
+                questionCount: existingResearch.questions.length 
+            });
+            
+            emitEvent({
+                type: 'artifact',
+                ts: Date.now(),
+                kind: 'research_questions',
+                content: existingResearch.questions,
+            });
+            
+            // In local mode, halt to allow user to answer
+            if (!isCloudMode) {
+                emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'research' }));
+                return { status: 'skipped', halt: true };
+            }
+        }
+        
         return { status: 'skipped' };
     }
 
@@ -84,7 +107,7 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
     }
 
     // Parse JSON response
-    let evaluation: import('../types.js').ResearchEvaluation;
+    let evaluation: ResearchEvaluation;
     try {
         // Extract JSON from potential markdown code blocks or other wrapping
         const jsonMatch = jsonContent.match(/\{[\s\S]*\}/);
@@ -113,11 +136,18 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
         return { status: 'completed', halt: true };
     }
 
-    // Always write eval.json
-    await fileManager.writeEval(task.id, evaluation);
+    // Add answered/answers fields to evaluation
+    if (evaluation.questions && evaluation.questions.length > 0) {
+        evaluation.answered = false;
+        evaluation.answers = undefined;
+    }
+
+    // Always write research.json
+    await fileManager.writeResearch(task.id, evaluation);
     stepLogger.info('Research evaluation written', {
         taskId: task.id,
         score: evaluation.actionabilityScore,
+        hasQuestions: !!evaluation.questions,
     });
 
     emitEvent({
@@ -132,28 +162,20 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
         commitMessage: `Research phase for ${task.title}`,
     });
 
-    // If score < 0.7 and questions exist, write questions.json and halt
+    // Log whether questions need answering
     if (evaluation.actionabilityScore < 0.7 && evaluation.questions && evaluation.questions.length > 0) {
         stepLogger.info('Actionability score below threshold, questions needed', {
             taskId: task.id,
             score: evaluation.actionabilityScore,
             questionCount: evaluation.questions.length,
         });
-
-        await fileManager.writeQuestions(task.id, {
-            questions: evaluation.questions,
-            answered: false,
-            answers: null,
-        });
-
+        
         emitEvent({
             type: 'artifact',
             ts: Date.now(),
             kind: 'research_questions',
             content: evaluation.questions,
         });
-
-        stepLogger.info('Questions written, halting for user input', { taskId: task.id });
     } else {
         stepLogger.info('Actionability score acceptable, proceeding to planning', {
             taskId: task.id,
@@ -167,9 +189,9 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
         return { status: 'completed', halt: true };
     }
 
-    // In cloud mode, handle questions automatically if possible
-    const questionsData = await fileManager.readQuestions(task.id);
-    if (questionsData && !questionsData.answered) {
+    // In cloud mode, check if questions need answering
+    const researchData = await fileManager.readResearch(task.id);
+    if (researchData?.questions && !researchData.answered) {
         // Questions need answering - halt for user input in cloud mode too
         emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'research' }));
         return { status: 'completed', halt: true };

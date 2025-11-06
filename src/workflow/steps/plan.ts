@@ -26,8 +26,8 @@ export const planStep: WorkflowStepRunner = async ({ step, context }) => {
         return { status: 'skipped' };
     }
 
-    const questionsData = await fileManager.readQuestions(task.id);
-    if (!questionsData || !questionsData.answered) {
+    const researchData = await fileManager.readResearch(task.id);
+    if (researchData?.questions && !researchData.answered) {
         stepLogger.info('Waiting for answered research questions', { taskId: task.id });
         emitEvent(adapter.createStatusEvent('phase_complete', { phase: 'research_questions' }));
         return { status: 'skipped', halt: true };
@@ -35,35 +35,36 @@ export const planStep: WorkflowStepRunner = async ({ step, context }) => {
 
     stepLogger.info('Starting planning phase', { taskId: task.id });
     emitEvent(adapter.createStatusEvent('phase_start', { phase: 'planning' }));
-
-    const evaluation = await fileManager.readEval(task.id);
     let researchContext = '';
-    if (evaluation) {
-        researchContext += `## Research Context\n\n${evaluation.context}\n\n`;
-        if (evaluation.keyFiles.length > 0) {
-            researchContext += `**Key Files:**\n${evaluation.keyFiles.map(f => `- ${f}`).join('\n')}\n\n`;
+    if (researchData) {
+        researchContext += `## Research Context\n\n${researchData.context}\n\n`;
+        if (researchData.keyFiles.length > 0) {
+            researchContext += `**Key Files:**\n${researchData.keyFiles.map(f => `- ${f}`).join('\n')}\n\n`;
         }
-        if (evaluation.blockers && evaluation.blockers.length > 0) {
-            researchContext += `**Considerations:**\n${evaluation.blockers.map(b => `- ${b}`).join('\n')}\n\n`;
+        if (researchData.blockers && researchData.blockers.length > 0) {
+            researchContext += `**Considerations:**\n${researchData.blockers.map(b => `- ${b}`).join('\n')}\n\n`;
         }
-    }
 
-    researchContext += `## Implementation Decisions\n\n`;
-    for (const question of questionsData.questions) {
-        const answer = questionsData.answers?.find(
-            (a: any) => a.questionId === question.id
-        );
+        // Add answered questions if they exist
+        if (researchData.questions && researchData.answers && researchData.answered) {
+            researchContext += `## Implementation Decisions\n\n`;
+            for (const question of researchData.questions) {
+                const answer = researchData.answers.find(
+                    (a) => a.questionId === question.id
+                );
 
-        researchContext += `### ${question.question}\n\n`;
-        if (answer) {
-            researchContext += `**Selected:** ${answer.selectedOption}\n`;
-            if (answer.customInput) {
-                researchContext += `**Details:** ${answer.customInput}\n`;
+                researchContext += `### ${question.question}\n\n`;
+                if (answer) {
+                    researchContext += `**Selected:** ${answer.selectedOption}\n`;
+                    if (answer.customInput) {
+                        researchContext += `**Details:** ${answer.customInput}\n`;
+                    }
+                } else {
+                    researchContext += `**Selected:** Not answered\n`;
+                }
+                researchContext += `\n`;
             }
-        } else {
-            researchContext += `**Selected:** Not answered\n`;
         }
-        researchContext += `\n`;
     }
 
     const planningPrompt = await promptBuilder.buildPlanningPrompt(task, cwd);

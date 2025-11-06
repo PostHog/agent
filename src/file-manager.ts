@@ -1,5 +1,5 @@
 import { promises as fs } from 'fs';
-import { join, dirname } from 'path';
+import { join } from 'path';
 import type { SupportingFile, ResearchEvaluation } from './types.js';
 import { Logger } from './utils/logger.js';
 
@@ -7,24 +7,6 @@ export interface TaskFile {
   name: string;
   content: string;
   type: 'plan' | 'context' | 'reference' | 'output' | 'artifact';
-}
-
-export interface QuestionData {
-  id: string;
-  question: string;
-  options: string[];
-}
-
-export interface AnswerData {
-  questionId: string;
-  selectedOption: string;
-  customInput?: string;
-}
-
-export interface QuestionsFile {
-  questions: QuestionData[];
-  answered: boolean;
-  answers: AnswerData[] | null;
 }
 
 export class PostHogFileManager {
@@ -170,55 +152,35 @@ export class PostHogFileManager {
     return await this.readTaskFile(taskId, 'requirements.md');
   }
 
-  async writeEval(taskId: string, data: ResearchEvaluation): Promise<void> {
-    this.logger.debug('Writing eval', {
+  async writeResearch(taskId: string, data: ResearchEvaluation): Promise<void> {
+    this.logger.debug('Writing research', {
       taskId,
       score: data.actionabilityScore,
       hasQuestions: !!data.questions,
       questionCount: data.questions?.length ?? 0,
+      answered: data.answered ?? false,
     });
 
     await this.writeTaskFile(taskId, {
-      name: 'eval.json',
+      name: 'research.json',
       content: JSON.stringify(data, null, 2),
       type: 'artifact'
     });
 
-    this.logger.info('Eval file written', { taskId, score: data.actionabilityScore });
+    this.logger.info('Research file written', { 
+      taskId, 
+      score: data.actionabilityScore,
+      hasQuestions: !!data.questions,
+      answered: data.answered ?? false,
+    });
   }
 
-  async readEval(taskId: string): Promise<ResearchEvaluation | null> {
+  async readResearch(taskId: string): Promise<ResearchEvaluation | null> {
     try {
-      const content = await this.readTaskFile(taskId, 'eval.json');
+      const content = await this.readTaskFile(taskId, 'research.json');
       return content ? JSON.parse(content) as ResearchEvaluation : null;
     } catch (error) {
-      this.logger.debug('Failed to parse eval.json', { error });
-      return null;
-    }
-  }
-
-  async writeQuestions(taskId: string, data: QuestionsFile): Promise<void> {
-    this.logger.debug('Writing questions', {
-      taskId,
-      questionCount: data.questions.length,
-      answered: data.answered,
-    });
-
-    await this.writeTaskFile(taskId, {
-      name: 'questions.json',
-      content: JSON.stringify(data, null, 2),
-      type: 'artifact'
-    });
-
-    this.logger.info('Questions file written', { taskId });
-  }
-
-  async readQuestions(taskId: string): Promise<QuestionsFile | null> {
-    try {
-      const content = await this.readTaskFile(taskId, 'questions.json');
-      return content ? JSON.parse(content) as QuestionsFile : null;
-    } catch (error) {
-      this.logger.debug('Failed to parse questions.json', { error });
+      this.logger.debug('Failed to parse research.json', { error });
       return null;
     }
   }
@@ -247,29 +209,5 @@ export class PostHogFileManager {
     }
     
     return files;
-  }
-
-  async ensureGitignore(): Promise<void> {
-    const gitignorePath = join(this.repositoryPath, '.posthog', '.gitignore');
-    const gitignoreContent = `# PostHog task artifacts - customize as needed
-# Exclude temporary files
-*/temp/
-*/cache/
-*/.env
-*/.secrets
-
-# Include plans and documentation by default
-!*/plan.md
-!*/context.md
-!*/requirements.md
-!*/README.md
-`;
-
-    try {
-      await fs.access(gitignorePath);
-    } catch {
-      await fs.mkdir(dirname(gitignorePath), { recursive: true });
-      await fs.writeFile(gitignorePath, gitignoreContent, 'utf8');
-    }
   }
 }

@@ -44,9 +44,9 @@ Output ONLY valid JSON with no markdown wrappers, no preamble, no explanation:
       "id": "q1",
       "question": "Specific architectural decision needed?",
       "options": [
-        "a) First approach with concrete details",
-        "b) Alternative approach with concrete details",
-        "c) Third option if needed"
+        "First approach with concrete details",
+        "Alternative approach with concrete details",
+        "Third option if needed"
       ]
     }
   ]
@@ -58,8 +58,8 @@ Rules:
 - keyFiles: array of file paths that need modification
 - blockers: optional array explaining confidence gaps
 - questions: ONLY include if actionabilityScore < 0.7
-- Each question must have 2-4 options
-- Max 4 questions total
+- Each question must have 2-3 options (maximum 3)
+- Max 3 questions total
 </output_format>
 
 <scoring_examples>
@@ -92,9 +92,9 @@ Questions needed: What feature? Which product area? What should it do?
   "id": "q1",
   "question": "Which caching layer should we use for API responses?",
   "options": [
-    "a) Redis (existing infrastructure, requires setup)",
-    "b) In-memory cache (simpler, but not distributed)",
-    "c) Browser-side caching only (minimal backend changes)"
+    "Redis (existing infrastructure, requires setup)",
+    "In-memory cache (simpler, but not distributed)",
+    "Browser-side caching only (minimal backend changes)"
   ]
 }
 </good_example>
@@ -103,7 +103,7 @@ Questions needed: What feature? Which product area? What should it do?
 {
   "id": "q1", 
   "question": "How should I implement this?",
-  "options": ["a) One way", "b) Another way"]
+  "options": ["One way", "Another way"]
 }
 Reason: Too vague, doesn't explain the tradeoffs
 </bad_example>
