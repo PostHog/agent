@@ -14,7 +14,8 @@ export type {
     ExecutionResult,
     AgentConfig,
     McpServerConfig,
-    AgentEvent
+    AgentEvent,
+    ResearchEvaluation
 } from './src/types.js';
 
 export {
