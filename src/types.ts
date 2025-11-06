@@ -346,3 +346,16 @@ export interface UrlMention {
   id?: string;
   label?: string;
 }
+
+// Research evaluation types
+export interface ResearchEvaluation {
+  actionabilityScore: number;    // 0-1 confidence score
+  context: string;               // brief summary for planning
+  keyFiles: string[];            // files needing modification
+  blockers?: string[];           // what's preventing full confidence
+  questions?: Array<{            // only if score < 0.7
+    id: string;
+    question: string;
+    options: string[];
+  }>;
+}

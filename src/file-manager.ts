@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
-import type { SupportingFile } from './types.js';
+import type { SupportingFile, ResearchEvaluation } from './types.js';
 import { Logger } from './utils/logger.js';
 
 export interface TaskFile {
@@ -170,24 +170,31 @@ export class PostHogFileManager {
     return await this.readTaskFile(taskId, 'requirements.md');
   }
 
-  async writeResearch(taskId: string, content: string): Promise<void> {
-    this.logger.debug('Writing research', {
+  async writeEval(taskId: string, data: ResearchEvaluation): Promise<void> {
+    this.logger.debug('Writing eval', {
       taskId,
-      contentLength: content.length,
-      contentPreview: content.substring(0, 200)
+      score: data.actionabilityScore,
+      hasQuestions: !!data.questions,
+      questionCount: data.questions?.length ?? 0,
     });
 
     await this.writeTaskFile(taskId, {
-      name: 'research.md',
-      content: content,
+      name: 'eval.json',
+      content: JSON.stringify(data, null, 2),
       type: 'artifact'
     });
 
-    this.logger.info('Research file written', { taskId });
+    this.logger.info('Eval file written', { taskId, score: data.actionabilityScore });
   }
 
-  async readResearch(taskId: string): Promise<string | null> {
-    return await this.readTaskFile(taskId, 'research.md');
+  async readEval(taskId: string): Promise<ResearchEvaluation | null> {
+    try {
+      const content = await this.readTaskFile(taskId, 'eval.json');
+      return content ? JSON.parse(content) as ResearchEvaluation : null;
+    } catch (error) {
+      this.logger.debug('Failed to parse eval.json', { error });
+      return null;
+    }
   }
 
   async writeQuestions(taskId: string, data: QuestionsFile): Promise<void> {

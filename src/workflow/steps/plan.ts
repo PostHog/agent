@@ -36,10 +36,16 @@ export const planStep: WorkflowStepRunner = async ({ step, context }) => {
     stepLogger.info('Starting planning phase', { taskId: task.id });
     emitEvent(adapter.createStatusEvent('phase_start', { phase: 'planning' }));
 
-    const researchContent = await fileManager.readResearch(task.id);
+    const evaluation = await fileManager.readEval(task.id);
     let researchContext = '';
-    if (researchContent) {
-        researchContext += `## Research Analysis\n\n${researchContent}\n\n`;
+    if (evaluation) {
+        researchContext += `## Research Context\n\n${evaluation.context}\n\n`;
+        if (evaluation.keyFiles.length > 0) {
+            researchContext += `**Key Files:**\n${evaluation.keyFiles.map(f => `- ${f}`).join('\n')}\n\n`;
+        }
+        if (evaluation.blockers && evaluation.blockers.length > 0) {
+            researchContext += `**Considerations:**\n${evaluation.blockers.map(b => `- ${b}`).join('\n')}\n\n`;
+        }
     }
 
     researchContext += `## Implementation Decisions\n\n`;
