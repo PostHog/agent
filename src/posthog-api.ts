@@ -11,7 +11,6 @@ export interface TaskRunUpdate {
   status?: TaskRun["status"];
   branch?: string | null;
   current_stage?: string | null;
-  log?: LogEntry[];
   error_message?: string | null;
   output?: Record<string, unknown> | null;
   state?: Record<string, unknown>;
@@ -169,6 +168,39 @@ export class PostHogAPIClient {
       method: 'POST',
       body: JSON.stringify({ entries }),
     });
+  }
+
+  /**
+   * Fetch logs from S3 using presigned URL from TaskRun
+   * @param taskRun - The task run containing the log_url
+   * @returns Array of log entries, or empty array if no logs available
+   */
+  async fetchTaskRunLogs(taskRun: TaskRun): Promise<LogEntry[]> {
+    if (!taskRun.log_url) {
+      return [];
+    }
+
+    try {
+      const response = await fetch(taskRun.log_url);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch logs: ${response.status} ${response.statusText}`);
+      }
+
+      const content = await response.text();
+      
+      if (!content.trim()) {
+        return [];
+      }
+
+      // Parse newline-delimited JSON
+      return content
+        .trim()
+        .split('\n')
+        .map(line => JSON.parse(line) as LogEntry);
+    } catch (error) {
+      throw new Error(`Failed to fetch task run logs: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**

@@ -1,5 +1,19 @@
 # @posthog/agent
 
+## Unreleased
+
+### Breaking Changes
+
+- **TaskRun logs now stored in S3**: The `TaskRun.log` field has been replaced with `TaskRun.log_url` (a presigned S3 URL)
+- Use the new `fetchTaskRunLogs(taskRun)` method to retrieve logs from S3
+- Logs are stored as newline-delimited JSON for efficient streaming and appending
+- The `TaskRunUpdate` interface no longer includes a `log` field
+
+### Added
+
+- New `fetchTaskRunLogs(taskRun)` helper method for reading logs from S3
+- Standardized log fetching API that can be optimized in the future
+
 ## 1.4.0
 
 ### Minor Changes
