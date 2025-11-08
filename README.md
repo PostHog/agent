@@ -93,12 +93,16 @@ const agent = new Agent({
 });
 
 const poller = setInterval(async () => {
-  const runs = await agent.getPostHogClient()?.listTaskRuns(taskId);
+  const client = agent.getPostHogClient();
+  const runs = await client?.listTaskRuns(taskId);
   const latestRun = runs?.sort((a, b) =>
     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   )[0];
+  
   if (latestRun) {
-    renderProgress(latestRun.status, latestRun.log);
+    // Fetch logs from S3 using presigned URL
+    const logs = await client?.fetchTaskRunLogs(latestRun);
+    renderProgress(latestRun.status, logs || []);
   }
 }, 3000);
 

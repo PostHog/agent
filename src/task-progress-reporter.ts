@@ -41,7 +41,6 @@ export class TaskProgressReporter {
     try {
       const run = await this.posthogAPI.createTaskRun(taskId, {
         status: 'started',
-        log: [],
       });
       this.taskRun = run;
       this.outputLog = [];

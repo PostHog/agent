@@ -39,7 +39,7 @@ export interface TaskRun {
   team: number;
   branch: string | null;
   status: 'started' | 'in_progress' | 'completed' | 'failed';
-  log: LogEntry[]; // Array of log entry objects
+  log_url?: string; // Presigned S3 URL for log access (valid for 1 hour)
   error_message: string | null;
   output: Record<string, unknown> | null; // Structured output (PR URL, commit SHA, etc.)
   state: Record<string, unknown>; // Intermediate run state (defaults to {}, never null)
