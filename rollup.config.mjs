@@ -47,6 +47,20 @@ export default defineConfig({
         {
           src: 'src/templates/*',
           dest: 'dist/templates'
+        },
+        // Bundle Claude CLI so consumers don't need to navigate nested node_modules
+        {
+          src: 'node_modules/@anthropic-ai/claude-agent-sdk/cli.js',
+          dest: 'dist/claude-cli'
+        },
+        // Create package.json for ES module support
+        {
+          src: 'node_modules/@anthropic-ai/claude-agent-sdk/package.json',
+          dest: 'dist/claude-cli',
+          transform: (contents) => {
+            // Only keep "type": "module" from the original package.json
+            return JSON.stringify({ type: 'module' }, null, 2);
+          }
         }
       ],
       hook: 'writeBundle'
