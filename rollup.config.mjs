@@ -61,6 +61,11 @@ export default defineConfig({
             // Only keep "type": "module" from the original package.json
             return JSON.stringify({ type: 'module' }, null, 2);
           }
+        },
+        // Copy yoga.wasm file that Claude CLI needs
+        {
+          src: 'node_modules/yoga-wasm-web/dist/yoga.wasm',
+          dest: 'dist/claude-cli'
         }
       ],
       hook: 'writeBundle'
