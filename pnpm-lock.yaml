@@ -9,11 +9,14 @@ importers:
   .:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
-        specifier: ^0.1.1
+        specifier: ^0.1.30
         version: 0.1.30(zod@3.25.76)
       dotenv:
         specifier: ^17.2.3
         version: 17.2.3
+      yoga-wasm-web:
+        specifier: ^0.3.3
+        version: 0.3.3
     devDependencies:
       '@changesets/cli':
         specifier: ^2.27.8
@@ -928,6 +931,9 @@ packages:
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
+  yoga-wasm-web@0.3.3:
+    resolution: {integrity: sha512-N+d4UJSJbt/R3wqY7Coqs5pcV0aUj2j9IaQ3rNj9bVCLld8tTGKRa2USARjnvZJWVx1NDmQev8EknoczaOQDOA==}
+
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
@@ -1840,5 +1846,7 @@ snapshots:
       strip-ansi: 7.1.2
 
   wrappy@1.0.2: {}
+
+  yoga-wasm-web@0.3.3: {}
 
   zod@3.25.76: {}
