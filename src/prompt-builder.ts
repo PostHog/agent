@@ -386,17 +386,41 @@ export class PromptBuilder {
     try {
       const taskFiles = await this.getTaskFiles(task.id);
       const hasPlan = taskFiles.some((f: any) => f.type === 'plan');
+      const todosFile = taskFiles.find((f: any) => f.name === 'todos.json');
 
       if (taskFiles.length > 0) {
         prompt += '\n<context>\n';
         for (const file of taskFiles) {
           if (file.type === 'plan') {
             prompt += `<plan>\n${file.content}\n</plan>\n`;
+          } else if (file.name === 'todos.json') {
+            // skip - we do this below
+            continue;
           } else {
             prompt += `<file name="${file.name}" type="${file.type}">\n${file.content}\n</file>\n`;
           }
         }
         prompt += '</context>\n';
+      }
+
+      // Add todos context if resuming work
+      if (todosFile) {
+        try {
+          const todos = JSON.parse(todosFile.content);
+          if (todos.items && todos.items.length > 0) {
+            prompt += '\n<previous_todos>\n';
+            prompt += 'You previously created the following todo list for this task:\n\n';
+            for (const item of todos.items) {
+              const statusIcon = item.status === 'completed' ? '✓' : item.status === 'in_progress' ? '▶' : '○';
+              prompt += `${statusIcon} [${item.status}] ${item.content}\n`;
+            }
+            prompt += `\nProgress: ${todos.metadata.completed}/${todos.metadata.total} completed\n`;
+            prompt += '\nYou can reference this list when resuming work or create an updated list as needed.\n';
+            prompt += '</previous_todos>\n';
+          }
+        } catch (error) {
+          this.logger.debug('Failed to parse todos.json for context', { error });
+        }
       }
 
       prompt += '\n<instructions>\n';

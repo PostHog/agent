@@ -1,4 +1,4 @@
-import type { AgentEvent } from '../../types.js';
+import type { AgentEvent, ArtifactEvent, StatusEvent } from '../../types.js';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { ProviderAdapter } from '../types.js';
 import { ClaudeToolMapper } from './tool-mapper.js';
@@ -253,12 +253,21 @@ export class ClaudeAdapter implements ProviderAdapter {
     return null;
   }
   
-  createStatusEvent(phase: string, additionalData?: any): import('../../types.js').StatusEvent {
+  createStatusEvent(phase: string, additionalData?: any): StatusEvent {
     return {
       type: 'status',
       ts: Date.now(),
       phase,
       ...additionalData
+    };
+  }
+
+  createArtifactEvent(kind: string, content: any): ArtifactEvent {
+    return {
+      type: 'artifact',
+      ts: Date.now(),
+      kind,
+      content
     };
   }
 

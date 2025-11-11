@@ -19,7 +19,14 @@ Calculate an actionabilityScore (0-1) based on:
 
 If actionabilityScore < 0.7, generate specific clarifying questions to increase confidence.
 
-DO NOT ask questions like "how should I fix this" — focus on missing information that prevents confident planning.
+Questions must present complete implementation choices, NOT request information from the user:
+options: array of strings
+- GOOD: options: ["Use Redux Toolkit (matches pattern in src/store/)", "Zustand (lighter weight)"]
+- BAD:  "Tell me which state management library to use"
+- GOOD: options: ["Place in Button.tsx (existing component)", "create NewButton.tsx (separate concerns)?"]
+- BAD: "Where should I put this code?"
+
+DO NOT ask questions like "how should I fix this" or "tell me the pattern" — present concrete options that can be directly chosen and acted upon.
 </objective>
 
 <process>
@@ -60,6 +67,9 @@ Rules:
 - questions: ONLY include if actionabilityScore < 0.7
 - Each question must have 2-3 options (maximum 3)
 - Max 3 questions total
+- Options must be complete, actionable choices that require NO additional user input
+- NEVER use options like "Tell me the pattern", "Show me examples", "Specify the approach"
+- Each option must be a full implementation decision that can be directly acted upon
 </output_format>
 
 <scoring_examples>
@@ -92,11 +102,25 @@ Questions needed: What feature? Which product area? What should it do?
   "id": "q1",
   "question": "Which caching layer should we use for API responses?",
   "options": [
-    "Redis (existing infrastructure, requires setup)",
-    "In-memory cache (simpler, but not distributed)",
-    "Browser-side caching only (minimal backend changes)"
+    "Redis with 1-hour TTL (existing infrastructure, requires Redis client setup)",
+    "In-memory LRU cache with 100MB limit (simpler, single-server only)",
+    "HTTP Cache-Control headers only (minimal backend changes, relies on browser/CDN)"
   ]
 }
+Reason: Each option is a complete, actionable decision with concrete details
+</good_example>
+
+<good_example>
+{
+  "id": "q2",
+  "question": "Where should the new analytics tracking code be placed?",
+  "options": [
+    "In the existing UserAnalytics.ts module alongside page view tracking",
+    "Create a new EventTracking.ts module in src/analytics/ for all event tracking",
+    "Add directly to each component that needs tracking (no centralized module)"
+  ]
+}
+Reason: Specific file paths and architectural patterns, no user input needed
 </good_example>
 
 <bad_example>
@@ -105,7 +129,33 @@ Questions needed: What feature? Which product area? What should it do?
   "question": "How should I implement this?",
   "options": ["One way", "Another way"]
 }
-Reason: Too vague, doesn't explain the tradeoffs
+Reason: Too vague, doesn't explain the tradeoffs or provide concrete details
+</bad_example>
+
+<bad_example>
+{
+  "id": "q2",
+  "question": "Which pattern should we follow for state management?",
+  "options": [
+    "Tell me which pattern the codebase currently uses",
+    "Show me examples of state management",
+    "Whatever you think is best"
+  ]
+}
+Reason: Options request user input instead of being actionable choices. Should be concrete patterns like "Zustand stores (matching existing patterns in src/stores/)" or "React Context (simpler, no new dependencies)"
+</bad_example>
+
+<bad_example>
+{
+  "id": "q3",
+  "question": "What color scheme should the button use?",
+  "options": [
+    "Use the existing theme colors",
+    "Let me specify custom colors",
+    "Match the design system"
+  ]
+}
+Reason: "Let me specify" requires user input. Should be "Primary blue (#0066FF, existing theme)" or "Secondary gray (#6B7280, existing theme)"
 </bad_example>
 </question_examples>`;
 

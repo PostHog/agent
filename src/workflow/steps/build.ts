@@ -3,6 +3,7 @@ import { EXECUTION_SYSTEM_PROMPT } from '../../agents/execution.js';
 import { PermissionMode } from '../../types.js';
 import type { WorkflowStepRunner } from '../types.js';
 import { finalizeStepGitActions } from '../utils.js';
+import { TodoManager } from '../../todo-manager.js';
 
 export const buildStep: WorkflowStepRunner = async ({ step, context }) => {
     const {
@@ -82,11 +83,19 @@ export const buildStep: WorkflowStepRunner = async ({ step, context }) => {
     // Track commits made during Claude Code execution
     const commitTracker = await gitManager.trackCommitsDuring();
 
+    // Track todos from TodoWrite tool calls
+    const todoManager = new TodoManager(context.fileManager, stepLogger);
+
     for await (const message of response) {
         emitEvent(adapter.createRawSDKEvent(message));
         const transformed = adapter.transform(message);
         if (transformed) {
             emitEvent(transformed);
+        }
+
+        const todoList = await todoManager.checkAndPersistFromMessage(message, task.id);
+        if (todoList) {
+            emitEvent(adapter.createArtifactEvent('todos', todoList));
         }
     }
 

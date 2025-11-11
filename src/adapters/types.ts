@@ -1,4 +1,4 @@
-import type { AgentEvent, StatusEvent } from '../types.js';
+import type { AgentEvent, StatusEvent, ArtifactEvent } from '../types.js';
 
 /**
  * Provider adapter interface for transforming provider-specific messages
@@ -22,6 +22,12 @@ export interface ProviderAdapter {
    * Used for task phase transitions and other status updates.
    */
   createStatusEvent(phase: string, additionalData?: any): StatusEvent;
+
+  /**
+   * Create an artifact event for custom task artifacts (todos, etc).
+   * Used to emit structured artifacts for UI consumption.
+   */
+  createArtifactEvent(kind: string, content: any): ArtifactEvent;
 
   /**
    * Create a raw SDK event for debugging purposes.
