@@ -70,7 +70,6 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
             'WebSearch',
             'ListMcpResources',
             'ReadMcpResource',
-            'TodoWrite',
             'BashOutput',
         ],
     };

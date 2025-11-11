@@ -262,6 +262,15 @@ export class ClaudeAdapter implements ProviderAdapter {
     };
   }
 
+  createArtifactEvent(kind: string, content: any): import('../../types.js').ArtifactEvent {
+    return {
+      type: 'artifact',
+      ts: Date.now(),
+      kind,
+      content
+    };
+  }
+
   private extractUserContent(content: unknown): string | null {
     if (!content) {
       return null;

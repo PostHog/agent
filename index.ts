@@ -27,6 +27,10 @@ export type {
     LoggerConfig
 } from './src/utils/logger.js';
 
+// Todo management
+export { TodoManager } from './src/todo-manager.js';
+export type { TodoItem, TodoList } from './src/todo-manager.js';
+
 // Provider adapter types
 export type { ProviderAdapter } from './src/adapters/types.js';
 export { ClaudeAdapter } from './src/adapters/claude/claude-adapter.js';

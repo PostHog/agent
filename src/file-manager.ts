@@ -185,6 +185,36 @@ export class PostHogFileManager {
     }
   }
 
+  async writeTodos(taskId: string, data: any): Promise<void> {
+    this.logger.debug('Writing todos', {
+      taskId,
+      total: data.metadata?.total ?? 0,
+      completed: data.metadata?.completed ?? 0,
+    });
+
+    await this.writeTaskFile(taskId, {
+      name: 'todos.json',
+      content: JSON.stringify(data, null, 2),
+      type: 'artifact'
+    });
+
+    this.logger.info('Todos file written', {
+      taskId,
+      total: data.metadata?.total ?? 0,
+      completed: data.metadata?.completed ?? 0,
+    });
+  }
+
+  async readTodos(taskId: string): Promise<any | null> {
+    try {
+      const content = await this.readTaskFile(taskId, 'todos.json');
+      return content ? JSON.parse(content) : null;
+    } catch (error) {
+      this.logger.debug('Failed to parse todos.json', { error });
+      return null;
+    }
+  }
+
   async getTaskFiles(taskId: string): Promise<SupportingFile[]> {
     const fileNames = await this.listTaskFiles(taskId);
     const files: SupportingFile[] = [];

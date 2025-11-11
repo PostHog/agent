@@ -2,6 +2,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { PLANNING_SYSTEM_PROMPT } from '../../agents/planning.js';
 import type { WorkflowStepRunner } from '../types.js';
 import { finalizeStepGitActions } from '../utils.js';
+import { TodoManager } from '../../todo-manager.js';
 
 export const planStep: WorkflowStepRunner = async ({ step, context }) => {
     const {
@@ -96,6 +97,9 @@ export const planStep: WorkflowStepRunner = async ({ step, context }) => {
         options: { ...baseOptions, ...(options.queryOverrides || {}) },
     });
 
+    // Track todos from TodoWrite tool calls
+    const todoManager = new TodoManager(fileManager, stepLogger);
+
     let planContent = '';
     for await (const message of response) {
         emitEvent(adapter.createRawSDKEvent(message));
@@ -103,10 +107,18 @@ export const planStep: WorkflowStepRunner = async ({ step, context }) => {
         if (transformed) {
             emitEvent(transformed);
         }
+
+        // Check for TodoWrite tool calls and persist todos
+        const todoList = await todoManager.checkAndPersistFromMessage(message, task.id);
+        if (todoList) {
+            emitEvent(adapter.createArtifactEvent('todos', todoList));
+        }
+
+        // Extract text content for plan
         if (message.type === 'assistant' && message.message?.content) {
-            for (const c of message.message.content) {
-                if (c.type === 'text' && c.text) {
-                    planContent += `${c.text}\n`;
+            for (const block of message.message.content) {
+                if (block.type === 'text' && block.text) {
+                    planContent += `${block.text}\n`;
                 }
             }
         }
