@@ -97,7 +97,6 @@ export const planStep: WorkflowStepRunner = async ({ step, context }) => {
         options: { ...baseOptions, ...(options.queryOverrides || {}) },
     });
 
-    // Track todos from TodoWrite tool calls
     const todoManager = new TodoManager(fileManager, stepLogger);
 
     let planContent = '';
@@ -108,7 +107,6 @@ export const planStep: WorkflowStepRunner = async ({ step, context }) => {
             emitEvent(transformed);
         }
 
-        // Check for TodoWrite tool calls and persist todos
         const todoList = await todoManager.checkAndPersistFromMessage(message, task.id);
         if (todoList) {
             emitEvent(adapter.createArtifactEvent('todos', todoList));

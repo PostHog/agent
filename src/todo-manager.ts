@@ -1,18 +1,12 @@
 import type { PostHogFileManager } from './file-manager.js';
 import { Logger } from './utils/logger.js';
 
-/**
- * Individual todo item matching the TodoWrite tool format
- */
 export interface TodoItem {
   content: string;
   status: 'pending' | 'in_progress' | 'completed';
   activeForm: string;
 }
 
-/**
- * Complete todo list with metadata
- */
 export interface TodoList {
   items: TodoItem[];
   metadata: {
@@ -24,9 +18,6 @@ export interface TodoList {
   };
 }
 
-/**
- * Manages todo list persistence and state for agent tasks
- */
 export class TodoManager {
   private fileManager: PostHogFileManager;
   private logger: Logger;
@@ -36,9 +27,6 @@ export class TodoManager {
     this.logger = logger || new Logger({ debug: false, prefix: '[TodoManager]' });
   }
 
-  /**
-   * Read existing todos for a task
-   */
   async readTodos(taskId: string): Promise<TodoList | null> {
     try {
       const content = await this.fileManager.readTaskFile(taskId, 'todos.json');
@@ -65,9 +53,6 @@ export class TodoManager {
     }
   }
 
-  /**
-   * Write todos to disk
-   */
   async writeTodos(taskId: string, todos: TodoList): Promise<void> {
     this.logger.debug('Writing todos', {
       taskId,
@@ -90,9 +75,6 @@ export class TodoManager {
     });
   }
 
-  /**
-   * Parse TodoWrite tool input and create TodoList
-   */
   parseTodoWriteInput(toolInput: any): TodoList {
     const items: TodoItem[] = [];
 
@@ -111,9 +93,6 @@ export class TodoManager {
     return { items, metadata };
   }
 
-  /**
-   * Calculate metadata statistics from todo items
-   */
   private calculateMetadata(items: TodoItem[]): TodoList['metadata'] {
     const total = items.length;
     const pending = items.filter((t) => t.status === 'pending').length;
@@ -129,9 +108,6 @@ export class TodoManager {
     };
   }
 
-  /**
-   * Create todo context string for system prompt injection
-   */
   async getTodoContext(taskId: string): Promise<string> {
     const todos = await this.readTodos(taskId);
     if (!todos || todos.items.length === 0) {
@@ -154,10 +130,7 @@ export class TodoManager {
     return lines.join('\n');
   }
 
-  /**
-   * Check SDK message for TodoWrite tool call and persist if found
-   * Returns the parsed TodoList if found and persisted, null otherwise
-   */
+  // check for TodoWrite tool call and persist if found
   async checkAndPersistFromMessage(
     message: any,
     taskId: string

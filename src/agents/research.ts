@@ -20,9 +20,10 @@ Calculate an actionabilityScore (0-1) based on:
 If actionabilityScore < 0.7, generate specific clarifying questions to increase confidence.
 
 Questions must present complete implementation choices, NOT request information from the user:
-- GOOD: "Use Redux Toolkit (matches pattern in src/store/) or Zustand (lighter weight)?"
-- BAD: "Tell me which state management library to use"
-- GOOD: "Place in Button.tsx (existing component) or create NewButton.tsx (separate concerns)?"
+options: array of strings
+- GOOD: options: ["Use Redux Toolkit (matches pattern in src/store/)", "Zustand (lighter weight)"]
+- BAD:  "Tell me which state management library to use"
+- GOOD: options: ["Place in Button.tsx (existing component)", "create NewButton.tsx (separate concerns)?"]
 - BAD: "Where should I put this code?"
 
 DO NOT ask questions like "how should I fix this" or "tell me the pattern" — present concrete options that can be directly chosen and acted upon.

@@ -394,7 +394,7 @@ export class PromptBuilder {
           if (file.type === 'plan') {
             prompt += `<plan>\n${file.content}\n</plan>\n`;
           } else if (file.name === 'todos.json') {
-            // Skip todos.json here, we'll format it specially below
+            // skip - we do this below
             continue;
           } else {
             prompt += `<file name="${file.name}" type="${file.type}">\n${file.content}\n</file>\n`;

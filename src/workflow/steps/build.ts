@@ -93,7 +93,6 @@ export const buildStep: WorkflowStepRunner = async ({ step, context }) => {
             emitEvent(transformed);
         }
 
-        // Check for TodoWrite tool calls and persist todos
         const todoList = await todoManager.checkAndPersistFromMessage(message, task.id);
         if (todoList) {
             emitEvent(adapter.createArtifactEvent('todos', todoList));
