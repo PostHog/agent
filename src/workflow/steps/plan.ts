@@ -102,9 +102,9 @@ export const planStep: WorkflowStepRunner = async ({ step, context }) => {
     let planContent = '';
     for await (const message of response) {
         emitEvent(adapter.createRawSDKEvent(message));
-        const transformed = adapter.transform(message);
-        if (transformed) {
-            emitEvent(transformed);
+        const transformedEvents = adapter.transform(message);
+        for (const event of transformedEvents) {
+            emitEvent(event);
         }
 
         const todoList = await todoManager.checkAndPersistFromMessage(message, task.id);

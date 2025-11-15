@@ -18,7 +18,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     };
   }
 
-  transform(sdkMessage: SDKMessage): AgentEvent | null {
+  transform(sdkMessage: SDKMessage): AgentEvent[] {
     const baseEvent = { ts: Date.now() };
 
     // Handle stream events
@@ -27,63 +27,63 @@ export class ClaudeAdapter implements ProviderAdapter {
 
       switch (event.type) {
         case 'message_start':
-          return {
+          return [{
             ...baseEvent,
             type: 'message_start',
             messageId: event.message?.id,
             model: event.message?.model
-          };
+          }];
 
         case 'content_block_start':
           const contentBlock = event.content_block;
-          if (!contentBlock) return null;
+          if (!contentBlock) return [];
 
-          return {
+          return [{
             ...baseEvent,
             type: 'content_block_start',
             index: event.index,
             contentType: contentBlock.type as 'text' | 'tool_use' | 'thinking',
             toolName: contentBlock.type === 'tool_use' ? contentBlock.name : undefined,
             toolId: contentBlock.type === 'tool_use' ? contentBlock.id : undefined
-          };
+          }];
 
         case 'content_block_delta':
           const delta = event.delta;
-          if (!delta) return null;
+          if (!delta) return [];
 
           if (delta.type === 'text_delta') {
-            return {
+            return [{
               ...baseEvent,
               type: 'token',
               content: delta.text,
               contentType: 'text'
-            };
+            }];
           } else if (delta.type === 'input_json_delta') {
-            return {
+            return [{
               ...baseEvent,
               type: 'token',
               content: delta.partial_json,
               contentType: 'tool_input'
-            };
+            }];
           } else if (delta.type === 'thinking_delta') {
-            return {
+            return [{
               ...baseEvent,
               type: 'token',
               content: delta.thinking,
               contentType: 'thinking'
-            };
+            }];
           }
-          return null;
+          return [];
 
         case 'content_block_stop':
-          return {
+          return [{
             ...baseEvent,
             type: 'content_block_stop',
             index: event.index
-          };
+          }];
 
         case 'message_delta':
-          return {
+          return [{
             ...baseEvent,
             type: 'message_delta',
             stopReason: event.delta?.stop_reason,
@@ -91,20 +91,20 @@ export class ClaudeAdapter implements ProviderAdapter {
             usage: event.usage ? {
               outputTokens: event.usage.output_tokens
             } : undefined
-          };
+          }];
 
         case 'message_stop':
-          return {
+          return [{
             ...baseEvent,
             type: 'message_stop'
-          };
+          }];
 
         case 'ping':
           // Ignore ping events
-          return null;
+          return [];
 
         case 'error':
-          return {
+          return [{
             ...baseEvent,
             type: 'error',
             message: event.error?.message || 'Unknown error',
@@ -115,18 +115,20 @@ export class ClaudeAdapter implements ProviderAdapter {
               code: event.error.code,
             } : undefined,
             sdkError: event.error
-          };
+          }];
 
         default:
-          return null;
+          return [];
       }
     }
 
     // Handle assistant messages (full message, not streaming)
     if (sdkMessage.type === 'assistant') {
       const message = sdkMessage.message;
+      const events: AgentEvent[] = [];
 
       // Extract tool calls from content blocks
+      // A single assistant message can contain multiple tool_use blocks
       if (message.content && Array.isArray(message.content)) {
         for (const block of message.content) {
           if (block.type === 'tool_use') {
@@ -139,27 +141,34 @@ export class ClaudeAdapter implements ProviderAdapter {
               args: block.input || {},
               parentToolUseId: sdkMessage.parent_tool_use_id
             };
-            // Enrich with tool metadata
-            return this.toolMapper.enrichToolCall(toolCallEvent);
+            // Enrich with tool metadata and add to events array
+            events.push(this.toolMapper.enrichToolCall(toolCallEvent));
           }
         }
       }
 
+      // If we found tool calls, return them
+      if (events.length > 0) {
+        return events;
+      }
+
       // If no tool calls, emit status event
-      return {
+      return [{
         ...baseEvent,
         type: 'status',
         phase: 'assistant_message',
         messageId: message.id,
         model: message.model
-      };
+      }];
     }
 
     // Handle user messages
     if (sdkMessage.type === 'user') {
       const message = sdkMessage.message;
+      const events: AgentEvent[] = [];
 
       // Check for tool results in content blocks
+      // A single user message can contain multiple tool_result blocks (e.g., from sub-agents)
       if (message?.content && Array.isArray(message.content)) {
         for (const block of message.content) {
           if (block.type === 'tool_result') {
@@ -173,29 +182,34 @@ export class ClaudeAdapter implements ProviderAdapter {
               isError: block.is_error,
               parentToolUseId: sdkMessage.parent_tool_use_id
             };
-            // Enrich with tool metadata
-            return this.toolMapper.enrichToolResult(toolResultEvent);
+            // Enrich with tool metadata and add to events array
+            events.push(this.toolMapper.enrichToolResult(toolResultEvent));
           }
         }
+      }
+
+      // If we found tool results, return them
+      if (events.length > 0) {
+        return events;
       }
 
       // Otherwise extract text content
       const textContent = this.extractUserContent(message?.content);
       if (!textContent) {
-        return null;
+        return [];
       }
-      return {
+      return [{
         ...baseEvent,
         type: 'user_message',
         content: textContent,
         isSynthetic: sdkMessage.isSynthetic
-      };
+      }];
     }
 
     // Handle result messages
     if (sdkMessage.type === 'result') {
       if (sdkMessage.subtype === 'success') {
-        return {
+        return [{
           ...baseEvent,
           type: 'done',
           result: sdkMessage.result,
@@ -206,9 +220,9 @@ export class ClaudeAdapter implements ProviderAdapter {
           usage: sdkMessage.usage,
           modelUsage: sdkMessage.modelUsage,
           permissionDenials: sdkMessage.permission_denials
-        };
+        }];
       } else {
-        return {
+        return [{
           ...baseEvent,
           type: 'error',
           message: `Execution failed: ${sdkMessage.subtype}`,
@@ -220,14 +234,14 @@ export class ClaudeAdapter implements ProviderAdapter {
             num_turns: sdkMessage.num_turns
           },
           sdkError: sdkMessage
-        };
+        }];
       }
     }
 
     // Handle system messages
     if (sdkMessage.type === 'system') {
       if (sdkMessage.subtype === 'init') {
-        return {
+        return [{
           ...baseEvent,
           type: 'init',
           model: sdkMessage.model,
@@ -239,18 +253,18 @@ export class ClaudeAdapter implements ProviderAdapter {
           slashCommands: sdkMessage.slash_commands,
           outputStyle: sdkMessage.output_style,
           mcpServers: sdkMessage.mcp_servers
-        };
+        }];
       } else if (sdkMessage.subtype === 'compact_boundary') {
-        return {
+        return [{
           ...baseEvent,
           type: 'compact_boundary',
           trigger: sdkMessage.compact_metadata.trigger,
           preTokens: sdkMessage.compact_metadata.pre_tokens
-        };
+        }];
       }
     }
 
-    return null;
+    return [];
   }
   
   createStatusEvent(phase: string, additionalData?: any): StatusEvent {
