@@ -83,9 +83,9 @@ export const researchStep: WorkflowStepRunner = async ({ step, context }) => {
     let jsonContent = '';
     for await (const message of response) {
         emitEvent(adapter.createRawSDKEvent(message));
-        const transformed = adapter.transform(message);
-        if (transformed) {
-            emitEvent(transformed);
+        const transformedEvents = adapter.transform(message);
+        for (const event of transformedEvents) {
+            emitEvent(event);
         }
         if (message.type === 'assistant' && message.message?.content) {
             for (const c of message.message.content) {

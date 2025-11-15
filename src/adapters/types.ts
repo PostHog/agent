@@ -12,10 +12,11 @@ export interface ProviderAdapter {
   name: string;
 
   /**
-   * Transform a provider-specific SDK message into an AgentEvent.
-   * Returns null if the message should be ignored.
+   * Transform a provider-specific SDK message into one or more AgentEvents.
+   * Returns an array of events (can be empty if the message should be ignored).
+   * A single SDK message may produce multiple events (e.g., multiple tool_result blocks).
    */
-  transform(sdkMessage: unknown): AgentEvent | null;
+  transform(sdkMessage: unknown): AgentEvent[];
 
   /**
    * Create a standardized status event.

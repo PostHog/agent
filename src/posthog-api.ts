@@ -1,4 +1,15 @@
-import type { Task, TaskRun, LogEntry, SupportingFile, PostHogAPIConfig, PostHogResource, ResourceType, UrlMention } from './types.js';
+import type {
+  Task,
+  TaskRun,
+  LogEntry,
+  SupportingFile,
+  PostHogAPIConfig,
+  PostHogResource,
+  ResourceType,
+  UrlMention,
+  TaskRunArtifact,
+  TaskArtifactUploadPayload,
+} from './types.js';
 
 interface PostHogApiResponse<T> {
   results?: T[];
@@ -168,6 +179,27 @@ export class PostHogAPIClient {
       method: 'POST',
       body: JSON.stringify({ entries }),
     });
+  }
+
+  async uploadTaskArtifacts(
+    taskId: string,
+    runId: string,
+    artifacts: TaskArtifactUploadPayload[]
+  ): Promise<TaskRunArtifact[]> {
+    if (!artifacts.length) {
+      return [];
+    }
+
+    const teamId = this.getTeamId();
+    const response = await this.apiRequest<{ artifacts: TaskRunArtifact[] }>(
+      `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/artifacts/`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ artifacts }),
+      }
+    );
+
+    return response.artifacts ?? [];
   }
 
   /**

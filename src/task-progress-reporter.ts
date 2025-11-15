@@ -1,6 +1,6 @@
 import type { Logger } from './utils/logger.js';
 import type { PostHogAPIClient, TaskRunUpdate } from './posthog-api.js';
-import type { AgentEvent, TaskRun } from './types.js';
+import type { AgentEvent, TaskRun, LogEntry } from './types.js';
 
 interface ProgressMetadata {
   totalSteps?: number;
@@ -20,6 +20,14 @@ export class TaskProgressReporter {
   private outputLog: string[] = [];
   private totalSteps?: number;
   private lastLogEntry?: string;
+  private tokenBuffer: string = '';
+  private tokenCount: number = 0;
+  private tokenFlushTimer?: NodeJS.Timeout;
+  private readonly TOKEN_BATCH_SIZE = 100;
+  private readonly TOKEN_FLUSH_INTERVAL_MS = 1000;
+  private logWriteQueue: Promise<void> = Promise.resolve();
+  private readonly LOG_APPEND_MAX_RETRIES = 3;
+  private readonly LOG_APPEND_RETRY_BASE_DELAY_MS = 200;
 
   constructor(posthogAPI: PostHogAPIClient | undefined, logger: Logger) {
     this.posthogAPI = posthogAPI;
@@ -51,6 +59,11 @@ export class TaskProgressReporter {
   }
 
   async complete(): Promise<void> {
+    await this.flushTokens(); // Flush any remaining tokens before completion
+    if (this.tokenFlushTimer) {
+      clearTimeout(this.tokenFlushTimer);
+      this.tokenFlushTimer = undefined;
+    }
     await this.update({ status: 'completed' }, 'Task execution completed');
   }
 
@@ -63,71 +76,319 @@ export class TaskProgressReporter {
     await this.update({}, line);
   }
 
+  private async flushTokens(): Promise<void> {
+    if (!this.tokenBuffer || this.tokenCount === 0) {
+      return;
+    }
+
+    const buffer = this.tokenBuffer;
+    this.tokenBuffer = '';
+    this.tokenCount = 0;
+
+    await this.appendLogEntry({
+      type: 'token',
+      message: buffer,
+    });
+  }
+
+  private scheduleTokenFlush(): void {
+    if (this.tokenFlushTimer) {
+      return;
+    }
+
+    this.tokenFlushTimer = setTimeout(() => {
+      this.tokenFlushTimer = undefined;
+      this.flushTokens().catch((err) => {
+        this.logger.warn('Failed to flush tokens', { error: err });
+      });
+    }, this.TOKEN_FLUSH_INTERVAL_MS);
+  }
+
+  private appendLogEntry(entry: LogEntry): Promise<void> {
+    if (!this.posthogAPI || !this.runId || !this.taskId) {
+      return Promise.resolve();
+    }
+
+    const taskId = this.taskId;
+    const runId = this.runId;
+
+    this.logWriteQueue = this.logWriteQueue
+      .catch((error) => {
+        // Ensure previous failures don't block subsequent writes
+        this.logger.debug('Previous log append failed', {
+          taskId,
+          runId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .then(() => this.writeLogEntry(taskId, runId, entry));
+
+    return this.logWriteQueue;
+  }
+
+  private async writeLogEntry(
+    taskId: string,
+    runId: string,
+    entry: LogEntry,
+  ): Promise<void> {
+    if (!this.posthogAPI) {
+      return;
+    }
+
+    for (let attempt = 1; attempt <= this.LOG_APPEND_MAX_RETRIES; attempt++) {
+      try {
+        await this.posthogAPI.appendTaskRunLog(taskId, runId, [entry]);
+        return;
+      } catch (error) {
+        this.logger.warn('Failed to append log entry', {
+          taskId,
+          runId,
+          attempt,
+          maxAttempts: this.LOG_APPEND_MAX_RETRIES,
+          error: (error as Error).message,
+        });
+
+        if (attempt === this.LOG_APPEND_MAX_RETRIES) {
+          return;
+        }
+
+        const delayMs =
+          this.LOG_APPEND_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
   async recordEvent(event: AgentEvent): Promise<void> {
     if (!this.posthogAPI || !this.runId || !this.taskId) {
       return;
     }
 
     switch (event.type) {
-      case 'token':
-      case 'message_delta':
-      case 'content_block_start':
-      case 'content_block_stop':
-      case 'compact_boundary':
-      case 'message_start':
-      case 'message_stop':
-      case 'metric':
-      case 'artifact':
-      case 'raw_sdk_event':
-        // Skip verbose streaming artifacts from persistence
+      case 'token': {
+        // Batch tokens for efficiency
+        this.tokenBuffer += event.content;
+        this.tokenCount++;
+
+        if (this.tokenCount >= this.TOKEN_BATCH_SIZE) {
+          await this.flushTokens();
+          if (this.tokenFlushTimer) {
+            clearTimeout(this.tokenFlushTimer);
+            this.tokenFlushTimer = undefined;
+          }
+        } else {
+          this.scheduleTokenFlush();
+        }
         return;
+      }
+
+      case 'content_block_start': {
+        await this.appendLogEntry({
+          type: 'content_block_start',
+          message: JSON.stringify({
+            index: event.index,
+            contentType: event.contentType,
+            toolName: event.toolName,
+            toolId: event.toolId,
+            ts: event.ts,
+          }),
+        });
+        return;
+      }
+
+      case 'content_block_stop': {
+        await this.appendLogEntry({
+          type: 'content_block_stop',
+          message: JSON.stringify({
+            index: event.index,
+            ts: event.ts,
+          }),
+        });
+        return;
+      }
+
+      case 'message_start': {
+        await this.appendLogEntry({
+          type: 'message_start',
+          message: JSON.stringify({
+            messageId: event.messageId,
+            model: event.model,
+            ts: event.ts,
+          }),
+        });
+        return;
+      }
+
+      case 'message_delta': {
+        await this.appendLogEntry({
+          type: 'message_delta',
+          message: JSON.stringify({
+            stopReason: event.stopReason,
+            stopSequence: event.stopSequence,
+            usage: event.usage,
+            ts: event.ts,
+          }),
+        });
+        return;
+      }
+
+      case 'message_stop': {
+        await this.appendLogEntry({
+          type: 'message_stop',
+          message: JSON.stringify({ ts: event.ts }),
+        });
+        return;
+      }
+
+      case 'status': {
+        await this.appendLogEntry({
+          type: 'status',
+          message: JSON.stringify({
+            phase: event.phase,
+            kind: event.kind,
+            branch: event.branch,
+            prUrl: event.prUrl,
+            taskId: event.taskId,
+            messageId: event.messageId,
+            model: event.model,
+            ts: event.ts,
+          }),
+        });
+        return;
+      }
+
+      case 'artifact': {
+        await this.appendLogEntry({
+          type: 'artifact',
+          message: JSON.stringify({
+            kind: event.kind,
+            content: event.content,
+            ts: event.ts,
+          }),
+        });
+        return;
+      }
+
+      case 'init': {
+        await this.appendLogEntry({
+          type: 'init',
+          message: JSON.stringify({
+            model: event.model,
+            tools: event.tools,
+            permissionMode: event.permissionMode,
+            cwd: event.cwd,
+            apiKeySource: event.apiKeySource,
+            ts: event.ts,
+          }),
+        });
+        return;
+      }
+
+      case 'metric': {
+        await this.appendLogEntry({
+          type: 'metric',
+          message: JSON.stringify({
+            key: event.key,
+            value: event.value,
+            unit: event.unit,
+            ts: event.ts,
+          }),
+        });
+        return;
+      }
+
+      case 'compact_boundary': {
+        await this.appendLogEntry({
+          type: 'compact_boundary',
+          message: JSON.stringify({
+            trigger: event.trigger,
+            preTokens: event.preTokens,
+            ts: event.ts,
+          }),
+        });
+        return;
+      }
 
       case 'tool_call': {
-        const logLine = this.formatToolCallEvent(event);
-        if (logLine) {
-          await this.appendLog(logLine);
-        }
+        await this.appendLogEntry({
+          type: 'tool_call',
+          message: JSON.stringify({
+            toolName: event.toolName,
+            callId: event.callId,
+            args: event.args,
+            parentToolUseId: event.parentToolUseId,
+            ts: event.ts,
+          }),
+        });
         return;
       }
 
       case 'tool_result': {
-        const logLine = this.formatToolResultEvent(event);
-        if (logLine) {
-          await this.appendLog(logLine);
-        }
+        await this.appendLogEntry({
+          type: 'tool_result',
+          message: JSON.stringify({
+            toolName: event.toolName,
+            callId: event.callId,
+            result: event.result,
+            isError: event.isError,
+            parentToolUseId: event.parentToolUseId,
+            ts: event.ts,
+          }),
+        });
         return;
       }
 
-      case 'status':
-        // Status events are covered by dedicated progress updates
+      case 'error': {
+        await this.appendLogEntry({
+          type: 'error',
+          message: JSON.stringify({
+            message: event.message,
+            errorType: event.errorType,
+            context: event.context,
+            ts: event.ts,
+          }),
+        });
         return;
-
-      case 'error':
-        await this.appendLog(`[error] ${event.message}`);
-        return;
+      }
 
       case 'done': {
-        const cost = event.totalCostUsd !== undefined ? ` cost=$${event.totalCostUsd.toFixed(2)}` : '';
-        await this.appendLog(
-          `[done] duration=${event.durationMs ?? 'unknown'}ms turns=${event.numTurns ?? 'unknown'}${cost}`
-        );
+        await this.appendLogEntry({
+          type: 'done',
+          message: JSON.stringify({
+            result: event.result,
+            durationMs: event.durationMs,
+            durationApiMs: event.durationApiMs,
+            numTurns: event.numTurns,
+            totalCostUsd: event.totalCostUsd,
+            usage: event.usage,
+            modelUsage: event.modelUsage,
+            permissionDenials: event.permissionDenials,
+            ts: event.ts,
+          }),
+        });
         return;
       }
 
-      case 'init':
-        // Omit verbose init messages from persisted log
-        return;
-
       case 'user_message': {
-        const summary = this.summarizeUserMessage(event.content);
-        if (summary) {
-          await this.appendLog(summary);
-        }
+        await this.appendLogEntry({
+          type: 'user_message',
+          message: JSON.stringify({
+            content: event.content,
+            isSynthetic: event.isSynthetic,
+            ts: event.ts,
+          }),
+        });
+        return;
+      }
+
+      case 'raw_sdk_event': {
+        // Skip raw SDK events - too verbose for persistence
         return;
       }
 
       default:
-        // For any unfamiliar event types, avoid spamming the log.
+        // For any unfamiliar event types, log them as-is
+        this.logger.debug('Unknown event type', { type: (event as any).type });
         return;
     }
   }
@@ -168,104 +429,4 @@ export class TaskProgressReporter {
     }
   }
 
-  private summarizeUserMessage(content?: string): string | null {
-    if (!content) {
-      return null;
-    }
-    const trimmed = content.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    const fileUpdateMatch = trimmed.match(/The file\s+([^\s]+)\s+has been updated/i);
-    if (fileUpdateMatch) {
-      return `[user] file updated: ${fileUpdateMatch[1]}`;
-    }
-
-    if (/Todos have been modified/i.test(trimmed)) {
-      return '[todo] list updated';
-    }
-
-    const diffMatch = trimmed.match(/diff --git a\/([^\s]+) b\/([^\s]+)/);
-    if (diffMatch) {
-      return `[diff] ${diffMatch[2] ?? diffMatch[1]}`;
-    }
-
-    const gitStatusMatch = trimmed.match(/^On branch ([^\n]+)/);
-    if (gitStatusMatch) {
-      return `[git] status ${gitStatusMatch[1]}`;
-    }
-
-    if (/This Bash command contains multiple operations/i.test(trimmed)) {
-      return '[approval] multi-step command pending';
-    }
-
-    if (/This command requires approval/i.test(trimmed)) {
-      return '[approval] command awaiting approval';
-    }
-
-    if (/^Exit plan mode\?/i.test(trimmed)) {
-      return null;
-    }
-
-    if (trimmed.includes('node_modules')) {
-      return null;
-    }
-
-    if (trimmed.includes('total ') && trimmed.includes('drwx')) {
-      return null;
-    }
-
-    if (trimmed.includes('→')) {
-      return null;
-    }
-
-    if (trimmed.split('\n').length > 2) {
-      return null;
-    }
-
-    const normalized = trimmed.replace(/\s+/g, ' ');
-    const maxLen = 120;
-    if (!normalized) {
-      return null;
-    }
-    const preview = normalized.length > maxLen ? `${normalized.slice(0, maxLen)}…` : normalized;
-    return `[user] ${preview}`;
-  }
-
-
-  private truncateMultiline(text: string, max = 160): string {
-    if (!text) {
-      return '';
-    }
-    const compact = text.replace(/\s+/g, ' ').trim();
-    return compact.length > max ? `${compact.slice(0, max)}…` : compact;
-  }
-
-  private formatToolCallEvent(event: Extract<AgentEvent, { type: 'tool_call' }>): string | null {
-    // File operations to track
-    const fileOps = ['read_file', 'write', 'search_replace', 'delete_file', 'glob_file_search', 'file_search', 'list_dir', 'edit_notebook'];
-    // Terminal commands to track
-    const terminalOps = ['run_terminal_cmd', 'bash', 'shell'];
-
-    if (fileOps.includes(event.toolName)) {
-      // Extract file path from args
-      const path = event.args?.target_file || event.args?.file_path || event.args?.target_notebook || event.args?.target_directory || '';
-      return `[tool] ${event.toolName}${path ? `: ${path}` : ''}`;
-    } else if (terminalOps.includes(event.toolName)) {
-      // Extract command from args
-      const cmd = event.args?.command || '';
-      const truncated = cmd.length > 80 ? `${cmd.slice(0, 80)}…` : cmd;
-      return `[cmd] ${truncated}`;
-    }
-
-    // Skip other tools from persistence
-    return null;
-  }
-
-  private formatToolResultEvent(event: Extract<AgentEvent, { type: 'tool_result' }>): string | null {
-    // We don't need to log tool results separately - tool calls are sufficient
-    // This keeps the log concise
-    return null;
-  }
 }
