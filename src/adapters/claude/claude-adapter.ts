@@ -21,7 +21,6 @@ export class ClaudeAdapter implements ProviderAdapter {
   transform(sdkMessage: SDKMessage): AgentEvent[] {
     const baseEvent = { ts: Date.now() };
 
-    // Handle stream events
     if (sdkMessage.type === 'stream_event') {
       const event = sdkMessage.event;
 
@@ -167,12 +166,10 @@ export class ClaudeAdapter implements ProviderAdapter {
       const message = sdkMessage.message;
       const events: AgentEvent[] = [];
 
-      // Check for tool results in content blocks
-      // A single user message can contain multiple tool_result blocks (e.g., from sub-agents)
-      if (message?.content && Array.isArray(message.content)) {
+      // Check for tool results in content blocks, A single user message can contain multiple tool_result blocks
+      if (message?.content && Array.isArray(message.content)) { 
         for (const block of message.content) {
           if (block.type === 'tool_result') {
-            // Create tool_result event and enrich with metadata
             const toolResultEvent = {
               ...baseEvent,
               type: 'tool_result' as const,
@@ -182,7 +179,6 @@ export class ClaudeAdapter implements ProviderAdapter {
               isError: block.is_error,
               parentToolUseId: sdkMessage.parent_tool_use_id
             };
-            // Enrich with tool metadata and add to events array
             events.push(this.toolMapper.enrichToolResult(toolResultEvent));
           }
         }

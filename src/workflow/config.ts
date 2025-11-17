@@ -43,11 +43,11 @@ export const TASK_WORKFLOW: WorkflowDefinition = [
     {
         id: 'finalize',
         name: 'Finalize',
-        agent: 'system',
-        model: MODELS.HAIKU,
-        permissionMode: 'plan',
-        commit: false,
-        push: false,
+        agent: 'system', // not used
+        model: MODELS.HAIKU, // not used
+        permissionMode: 'plan', // not used
+        commit: true,
+        push: true,
         run: finalizeStep,
     },
 ];

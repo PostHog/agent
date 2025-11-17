@@ -214,7 +214,6 @@ export class Agent {
             this.logger.debug('Received message in direct run', message);
             // Emit raw SDK event
             this.emitEvent(this.adapter.createRawSDKEvent(message));
-            // Emit transformed events (can be multiple per message)
             const transformedEvents = this.adapter.transform(message);
             for (const event of transformedEvents) {
                 this.emitEvent(event);
