@@ -1,0 +1,45 @@
+{
+  "actionabilityScore": 0.25,
+  "context": "Task description is extremely vague - 'Evaluate agent package' with minimal context. While repository exploration reveals this is the PostHog Agent SDK (a mature TypeScript framework wrapping Claude Agent SDK for Git-integrated AI task execution), the requested evaluation lacks specific objectives, success criteria, and scope definition.",
+  "keyFiles": [],
+  "blockers": [
+    "Task description provides no specific evaluation criteria or deliverables",
+    "Unknown whether evaluation should assess code quality, architecture, functionality, performance, testing, or documentation",
+    "No definition of what 'evaluation' means in this context (audit, review, assessment, refactoring analysis?)",
+    "Unknown audience or purpose for evaluation results",
+    "No success metrics or acceptance criteria specified"
+  ],
+  "questions": [
+    {
+      "id": "q1",
+      "question": "What specific aspect of the agent package should be evaluated?",
+      "options": [
+        "Code quality and architecture review (examine design patterns, type safety, modularity, adherence to conventions)",
+        "Test coverage analysis and recommendations (assess gaps in automated testing and propose test strategy)",
+        "Performance evaluation (profile runtime, memory usage, identify bottlenecks, recommend optimizations)",
+        "Security audit (review API integrations, credential handling, Git operations, input validation)"
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "What should the evaluation deliverable be?",
+      "options": [
+        "Written report with findings, scores, and recommendations for improvement areas",
+        "Actionable tasks and PRs to address identified issues or improvements",
+        "Presentation-ready summary of package strengths, weaknesses, and maturity assessment",
+        "Comparison against industry best practices and similar SDK/framework projects"
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "What is the primary goal of this evaluation?",
+      "options": [
+        "Prepare for open-source release or public documentation updates",
+        "Identify refactoring priorities before next major version release",
+        "Assess readiness for production expansion or new feature development",
+        "Conduct due diligence for potential acquisition or partnership evaluation"
+      ]
+    }
+  ],
+  "answered": false
+}
