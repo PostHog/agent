@@ -1,0 +1,42 @@
+{
+  "actionabilityScore": 0.15,
+  "context": "Task description is non-specific ('Test 123'). Repository is a TypeScript-based Claude Agent framework with no existing test infrastructure. Cannot determine what should be tested, what type of test is needed, or which components are in scope.",
+  "keyFiles": [],
+  "blockers": [
+    "Task title and description are identical and non-descriptive",
+    "No test framework currently exists in the project",
+    "Unclear which feature/component should be tested",
+    "No acceptance criteria or expected outcomes defined"
+  ],
+  "questions": [
+    {
+      "id": "q1",
+      "question": "What component or functionality should be tested?",
+      "options": [
+        "Agent core functionality (agent.ts - Claude API integration and task execution)",
+        "PostHog API client (posthog-api.ts - task fetching and authentication)",
+        "Git manager operations (git-manager.ts - branch creation, commits, file operations)",
+        "File manager system (file-manager.ts - .posthog directory structure management)"
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "What testing framework and approach should be used?",
+      "options": [
+        "Vitest with unit tests (lightweight, native ESM support, faster iteration)",
+        "Jest with TypeScript (broader ecosystem, industry standard, requires extra config)",
+        "Integration tests with real API mocking (test workflows end-to-end)"
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "What scope of testing is required?",
+      "options": [
+        "Unit tests for individual functions and methods (fast, focused coverage)",
+        "Integration tests for multi-component workflows (validates interactions between modules)",
+        "Both unit and integration tests with coverage targets (comprehensive, higher maintenance)"
+      ]
+    }
+  ],
+  "answered": false
+}
