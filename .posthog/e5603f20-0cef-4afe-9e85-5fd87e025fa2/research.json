@@ -38,5 +38,19 @@
       ]
     }
   ],
-  "answered": false
+  "answered": true,
+  "answers": [
+    {
+      "questionId": "q1",
+      "selectedOption": "Agent core functionality (agent.ts - Claude API integration and task execution)"
+    },
+    {
+      "questionId": "q2",
+      "selectedOption": "Jest with TypeScript (broader ecosystem, industry standard, requires extra config)"
+    },
+    {
+      "questionId": "q3",
+      "selectedOption": "Both unit and integration tests with coverage targets (comprehensive, higher maintenance)"
+    }
+  ]
 }
