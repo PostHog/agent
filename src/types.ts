@@ -32,6 +32,17 @@ export interface LogEntry {
   [key: string]: unknown; // Allow additional fields
 }
 
+export type ArtifactType = 'plan' | 'context' | 'reference' | 'output' | 'artifact';
+
+export interface TaskRunArtifact {
+  name: string;
+  type: ArtifactType;
+  size?: number;
+  content_type?: string;
+  storage_path?: string;
+  uploaded_at?: string;
+}
+
 // TaskRun model - represents individual execution runs of tasks
 export interface TaskRun {
   id: string;
@@ -43,6 +54,7 @@ export interface TaskRun {
   error_message: string | null;
   output: Record<string, unknown> | null; // Structured output (PR URL, commit SHA, etc.)
   state: Record<string, unknown>; // Intermediate run state (defaults to {}, never null)
+  artifacts?: TaskRunArtifact[];
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -51,8 +63,15 @@ export interface TaskRun {
 export interface SupportingFile {
   name: string;
   content: string;
-  type: 'plan' | 'context' | 'reference' | 'output';
+  type: ArtifactType;
   created_at: string;
+}
+
+export interface TaskArtifactUploadPayload {
+  name: string;
+  type: ArtifactType;
+  content: string;
+  content_type?: string;
 }
 
 export enum PermissionMode {

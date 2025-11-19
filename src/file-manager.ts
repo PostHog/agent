@@ -1,5 +1,5 @@
 import { promises as fs } from 'fs';
-import { join } from 'path';
+import { join, extname } from 'path';
 import type { SupportingFile, ResearchEvaluation } from './types.js';
 import { Logger } from './utils/logger.js';
 
@@ -7,6 +7,14 @@ export interface TaskFile {
   name: string;
   content: string;
   type: 'plan' | 'context' | 'reference' | 'output' | 'artifact';
+}
+
+export interface LocalArtifact {
+  name: string;
+  content: string;
+  type: TaskFile['type'];
+  contentType: string;
+  size: number;
 }
 
 export class PostHogFileManager {
@@ -223,11 +231,7 @@ export class PostHogFileManager {
       const content = await this.readTaskFile(taskId, fileName);
       if (content !== null) {
         // Determine type based on file name
-        let type: SupportingFile['type'] = 'reference';
-        if (fileName === 'plan.md') type = 'plan';
-        else if (fileName === 'context.md') type = 'context';
-        else if (fileName === 'requirements.md') type = 'reference';
-        else if (fileName.startsWith('output_')) type = 'output';
+        const type = this.resolveFileType(fileName);
         
         files.push({
           name: fileName,
@@ -239,5 +243,54 @@ export class PostHogFileManager {
     }
     
     return files;
+  }
+
+  async collectTaskArtifacts(taskId: string): Promise<LocalArtifact[]> {
+    const fileNames = await this.listTaskFiles(taskId);
+    const artifacts: LocalArtifact[] = [];
+
+    for (const fileName of fileNames) {
+      const content = await this.readTaskFile(taskId, fileName);
+      if (content === null) {
+        continue;
+      }
+
+      const type = this.resolveFileType(fileName);
+      const contentType = this.inferContentType(fileName);
+      const size = Buffer.byteLength(content, 'utf8');
+
+      artifacts.push({
+        name: fileName,
+        content,
+        type,
+        contentType,
+        size,
+      });
+    }
+
+    return artifacts;
+  }
+
+  private resolveFileType(fileName: string): TaskFile['type'] {
+    if (fileName === 'plan.md') return 'plan';
+    if (fileName === 'context.md') return 'context';
+    if (fileName === 'requirements.md') return 'reference';
+    if (fileName.startsWith('output_')) return 'output';
+    if (fileName.endsWith('.md')) return 'reference';
+    return 'artifact';
+  }
+
+  private inferContentType(fileName: string): string {
+    const extension = extname(fileName).toLowerCase();
+    switch (extension) {
+      case '.md':
+        return 'text/markdown';
+      case '.json':
+        return 'application/json';
+      case '.txt':
+        return 'text/plain';
+      default:
+        return 'text/plain';
+    }
   }
 }
