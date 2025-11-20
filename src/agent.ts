@@ -191,9 +191,7 @@ export class Agent {
 
     // Direct prompt execution - still supported for low-level usage
     async run(prompt: string, options: { repositoryPath?: string; permissionMode?: import('./types.js').PermissionMode; queryOverrides?: Record<string, any>; canUseTool?: CanUseTool } = {}): Promise<ExecutionResult> {
-        this.logger.debug('Starting run() method');
         await this._configureLlmGateway();
-        this.logger.debug('LLM gateway configured');
 
         const baseOptions: Record<string, any> = {
             model: "claude-sonnet-4-5-20250929",
@@ -201,8 +199,6 @@ export class Agent {
             permissionMode: (options.permissionMode as any) || "default",
             settingSources: ["local"],
             mcpServers: this.mcpServers,
-            // Don't pass env or executable - let SDK use its defaults
-            // SDK will auto-detect runtime and use default env = { ...process.env }
         };
 
         // Add canUseTool hook if provided (options take precedence over instance config)
@@ -211,18 +207,13 @@ export class Agent {
             baseOptions.canUseTool = canUseTool;
         }
 
-        this.logger.debug('About to call query() with options:', baseOptions);
         const response = query({
             prompt,
             options: { ...baseOptions, ...(options.queryOverrides || {}) },
         });
-        this.logger.debug('query() returned, starting to iterate messages');
 
         const results = [];
-        let messageCount = 0;
         for await (const message of response) {
-            messageCount++;
-            this.logger.debug(`Received message #${messageCount} in direct run`, { type: message.type });
             // Emit raw SDK event
             this.emitEvent(this.adapter.createRawSDKEvent(message));
             const transformedEvents = this.adapter.transform(message);
@@ -232,7 +223,6 @@ export class Agent {
             results.push(message);
         }
 
-        this.logger.debug(`Finished iterating messages. Total: ${messageCount}`);
         return { results };
     }
     
