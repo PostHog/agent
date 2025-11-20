@@ -50,11 +50,14 @@ async function testAgent() {
                 throw new Error('PostHog API client not initialized');
             }
 
-            const taskRun = await posthogApi.createTaskRun(TASK_ID)
+            console.log('📝 Creating task run...');
+            const taskRun = await posthogApi.createTaskRun(TASK_ID);
+            console.log(`✅ Task run created: ${taskRun.id}`);
 
 
 
             // Set up progress polling
+            console.log('🔄 Starting progress poller...');
             poller = setInterval(async () => {
                 try {
                     const updatedRun = await posthogApi.getTaskRun(TASK_ID, taskRun.id);
@@ -65,6 +68,7 @@ async function testAgent() {
             }, 5000);
 
             // Run task with plan mode
+            console.log('🚀 Starting task execution...');
             await agent.runTask(TASK_ID, taskRun.id, {
                 repositoryPath: REPO_PATH,
                 permissionMode: PermissionMode.ACCEPT_EDITS,
