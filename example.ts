@@ -58,11 +58,8 @@ async function testAgent() {
             // Set up progress polling
             poller = setInterval(async () => {
                 try {
-                    const updatedTask = await posthogApi.fetchTask(TASK_ID);
-                    const latestRun = updatedTask?.latest_run;
-                    if (latestRun) {
-                        console.log(`📊 Progress: ${latestRun.status}`);
-                    }
+                    const updatedRun = await posthogApi.getTaskRun(TASK_ID, taskRun.id);
+                    console.log(`📊 Progress: ${updatedRun.status}`);
                 } catch (err) {
                     console.warn('Failed to fetch task progress', err);
                 }
