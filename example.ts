@@ -49,7 +49,6 @@ async function testAgent() {
             if (!posthogApi) {
                 throw new Error('PostHog API client not initialized');
             }
-            const task = await posthogApi.fetchTask(TASK_ID);
 
             const taskRun = await posthogApi.createTaskRun(TASK_ID)
 
