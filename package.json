@@ -29,8 +29,7 @@
   },
   "scripts": {
     "build": "rimraf dist && rollup -c && tsc --project tsconfig.build.json --emitDeclarationOnly",
-    "example": "bun run example-usage.ts",
-    "dev": "bun run example-usage.ts",
+    "example": "bun run example.ts",
     "prepublishOnly": "bun run build"
   },
   "engines": {

@@ -44,7 +44,7 @@ export interface TaskRunArtifact {
   uploaded_at?: string;
 }
 
-export type TaskRunStatus = 'queued' | 'in_progress' | 'completed' | 'failed';
+export type TaskRunStatus = 'not_started' | 'queued' | 'in_progress' | 'completed' | 'failed' | 'cancelled';
 
 export type TaskRunEnvironment = 'local' | 'cloud';
 

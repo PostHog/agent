@@ -14,6 +14,16 @@ async function testAgent() {
         process.exit(1);
     }
 
+    if (!process.env.POSTHOG_PROJECT_ID) {
+        console.error("❌ POSTHOG_PROJECT_ID required");
+        process.exit(1);
+    }
+
+    if (!process.env.POSTHOG_API_URL) {
+        console.error("❌ POSTHOG_API_URL required");
+        process.exit(1);
+    }
+
     console.log(`📁 Working in: ${REPO_PATH}`);
 
     const agent = new Agent({
@@ -41,6 +51,10 @@ async function testAgent() {
             }
             const task = await posthogApi.fetchTask(TASK_ID);
 
+            const taskRun = await posthogApi.createTaskRun(TASK_ID)
+
+
+
             // Set up progress polling
             poller = setInterval(async () => {
                 try {
@@ -55,11 +69,22 @@ async function testAgent() {
             }, 5000);
 
             // Run task with plan mode
-            await agent.runTask(task, {
+            await agent.runTask(TASK_ID, taskRun.id, {
                 repositoryPath: REPO_PATH,
                 permissionMode: PermissionMode.ACCEPT_EDITS,
                 isCloudMode: false,
                 autoProgress: true,
+                queryOverrides: {
+                    env: {
+                        ...process.env,
+                        POSTHOG_API_KEY: process.env.POSTHOG_API_KEY,
+                        POSTHOG_API_HOST: process.env.POSTHOG_API_URL,
+                        POSTHOG_AUTH_HEADER: `Bearer ${process.env.POSTHOG_API_KEY}`,
+                        ANTHROPIC_API_KEY: process.env.POSTHOG_API_KEY,
+                        ANTHROPIC_AUTH_TOKEN: process.env.POSTHOG_API_KEY,
+                        ANTHROPIC_BASE_URL: `${process.env.POSTHOG_API_URL}/api/projects/${process.env.POSTHOG_PROJECT_ID}/llm_gateway`,
+                    }
+                }     
             });
 
             console.log("✅ Done!");

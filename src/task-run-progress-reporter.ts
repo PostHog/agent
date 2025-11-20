@@ -51,6 +51,8 @@ export class TaskRunProgressReporter {
       this.taskRun = run;
       this.outputLog = [];
       this.logger.debug('Loaded task run', { taskId, runId: run.id });
+
+      await this.update({ status: 'in_progress' }, 'Task execution started');
     } catch (error) {
       this.logger.warn('Failed to load task run', { taskId, runId, error: (error as Error).message });
     }
