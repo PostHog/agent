@@ -7,12 +7,12 @@ interface ProgressMetadata {
 }
 
 /**
- * Persists task execution progress to PostHog so clients can poll for updates.
+ * Persists task run execution progress to PostHog so clients can poll for updates.
  *
  * The reporter is intentionally best-effort – failures are logged but never
  * allowed to break the agent execution flow.
  */
-export class TaskProgressReporter {
+export class TaskRunProgressReporter {
   private posthogAPI?: PostHogAPIClient;
   private logger: Logger;
   private taskRun?: TaskRun;
@@ -31,14 +31,14 @@ export class TaskProgressReporter {
 
   constructor(posthogAPI: PostHogAPIClient | undefined, logger: Logger) {
     this.posthogAPI = posthogAPI;
-    this.logger = logger.child('TaskProgressReporter');
+    this.logger = logger.child('TaskRunProgressReporter');
   }
 
   get runId(): string | undefined {
     return this.taskRun?.id;
   }
 
-  async start(taskId: string, metadata: ProgressMetadata = {}): Promise<void> {
+  async start(taskId: string, runId: string, metadata: ProgressMetadata = {}): Promise<void> {
     if (!this.posthogAPI) {
       return;
     }
@@ -47,14 +47,12 @@ export class TaskProgressReporter {
     this.totalSteps = metadata.totalSteps;
 
     try {
-      const run = await this.posthogAPI.createTaskRun(taskId, {
-        status: 'started',
-      });
+      const run = await this.posthogAPI.getTaskRun(taskId, runId);
       this.taskRun = run;
       this.outputLog = [];
-      this.logger.debug('Created task run', { taskId, runId: run.id });
+      this.logger.debug('Loaded task run', { taskId, runId: run.id });
     } catch (error) {
-      this.logger.warn('Failed to create task run', { taskId, error: (error as Error).message });
+      this.logger.warn('Failed to load task run', { taskId, runId, error: (error as Error).message });
     }
   }
 

@@ -9,7 +9,7 @@ import { ClaudeAdapter } from './adapters/claude/claude-adapter.js';
 import type { ProviderAdapter } from './adapters/types.js';
 import { Logger } from './utils/logger.js';
 import { PromptBuilder } from './prompt-builder.js';
-import { TaskProgressReporter } from './task-progress-reporter.js';
+import { TaskRunProgressReporter } from './task-run-progress-reporter.js';
 import { TASK_WORKFLOW } from './workflow/config.js';
 import type { WorkflowRuntime } from './workflow/types.js';
 
@@ -23,7 +23,7 @@ export class Agent {
     private templateManager: TemplateManager;
     private adapter: ProviderAdapter;
     private logger: Logger;
-    private progressReporter: TaskProgressReporter;
+    private progressReporter: TaskRunProgressReporter;
     private promptBuilder: PromptBuilder;
     private mcpServers?: Record<string, any>;
     private canUseTool?: CanUseTool;
@@ -89,7 +89,7 @@ export class Agent {
             posthogClient: this.posthogAPI,
             logger: this.logger.child('PromptBuilder')
         });
-        this.progressReporter = new TaskProgressReporter(this.posthogAPI, this.logger);
+        this.progressReporter = new TaskRunProgressReporter(this.posthogAPI, this.logger);
     }
 
     /**
@@ -124,19 +124,21 @@ export class Agent {
     }
 
     // Adaptive task execution orchestrated via workflow steps
-    async runTask(taskOrId: Task | string, options: import('./types.js').TaskExecutionOptions = {}): Promise<void> {
+    async runTask(taskId: string, taskRunId: string, options: import('./types.js').TaskExecutionOptions = {}): Promise<void> {
         await this._configureLlmGateway();
 
-        const task = typeof taskOrId === 'string' ? await this.fetchTask(taskOrId) : taskOrId;
+        const task = await this.fetchTask(taskId);
+
+        
         const cwd = options.repositoryPath || this.workingDirectory;
         const isCloudMode = options.isCloudMode ?? false;
         const taskSlug = (task as any).slug || task.id;
-
-        this.logger.info('Starting adaptive task execution', { taskId: task.id, taskSlug, isCloudMode });
-
+        
+        this.logger.info('Starting adaptive task execution', { taskId: task.id, taskSlug, taskRunId, isCloudMode });
+        
         // Initialize progress reporter for task run tracking (needed for PR attachment)
-        await this.progressReporter.start(task.id, { totalSteps: TASK_WORKFLOW.length });
-        this.emitEvent(this.adapter.createStatusEvent('run_started', { runId: this.progressReporter.runId }));
+        await this.progressReporter.start(taskId, taskRunId, { totalSteps: TASK_WORKFLOW.length });
+        this.emitEvent(this.adapter.createStatusEvent('run_started', { runId: taskRunId }));
 
         await this.prepareTaskBranch(taskSlug, isCloudMode);
 
@@ -189,13 +191,18 @@ export class Agent {
 
     // Direct prompt execution - still supported for low-level usage
     async run(prompt: string, options: { repositoryPath?: string; permissionMode?: import('./types.js').PermissionMode; queryOverrides?: Record<string, any>; canUseTool?: CanUseTool } = {}): Promise<ExecutionResult> {
+        this.logger.debug('Starting run() method');
         await this._configureLlmGateway();
+        this.logger.debug('LLM gateway configured');
+
         const baseOptions: Record<string, any> = {
             model: "claude-sonnet-4-5-20250929",
             cwd: options.repositoryPath || this.workingDirectory,
             permissionMode: (options.permissionMode as any) || "default",
             settingSources: ["local"],
             mcpServers: this.mcpServers,
+            // Don't pass env or executable - let SDK use its defaults
+            // SDK will auto-detect runtime and use default env = { ...process.env }
         };
 
         // Add canUseTool hook if provided (options take precedence over instance config)
@@ -204,14 +211,18 @@ export class Agent {
             baseOptions.canUseTool = canUseTool;
         }
 
+        this.logger.debug('About to call query() with options:', baseOptions);
         const response = query({
             prompt,
             options: { ...baseOptions, ...(options.queryOverrides || {}) },
         });
+        this.logger.debug('query() returned, starting to iterate messages');
 
         const results = [];
+        let messageCount = 0;
         for await (const message of response) {
-            this.logger.debug('Received message in direct run', message);
+            messageCount++;
+            this.logger.debug(`Received message #${messageCount} in direct run`, { type: message.type });
             // Emit raw SDK event
             this.emitEvent(this.adapter.createRawSDKEvent(message));
             const transformedEvents = this.adapter.transform(message);
@@ -220,7 +231,8 @@ export class Agent {
             }
             results.push(message);
         }
-        
+
+        this.logger.debug(`Finished iterating messages. Total: ${messageCount}`);
         return { results };
     }
     
