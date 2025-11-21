@@ -60,8 +60,6 @@ export class TaskProgressReporter {
 
   async complete(): Promise<void> {
     await this.flushTokens(); // Flush any remaining tokens before completion
-    
-    // Wait for any pending log writes (including those triggered by emitEvent)
     try {
       await this.logWriteQueue;
     } catch (error) {
@@ -76,7 +74,6 @@ export class TaskProgressReporter {
   }
 
   async fail(error: Error | string): Promise<void> {
-    // Wait for any pending log writes before marking failed
     try {
       await this.logWriteQueue;
     } catch (logError) {
@@ -129,7 +126,6 @@ export class TaskProgressReporter {
 
     this.logWriteQueue = this.logWriteQueue
       .catch((error) => {
-        // Ensure previous failures don't block subsequent writes
         this.logger.debug('Previous log append failed', {
           taskId,
           runId,
