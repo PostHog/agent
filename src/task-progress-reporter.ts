@@ -60,6 +60,14 @@ export class TaskProgressReporter {
 
   async complete(): Promise<void> {
     await this.flushTokens(); // Flush any remaining tokens before completion
+    
+    // Wait for any pending log writes (including those triggered by emitEvent)
+    try {
+      await this.logWriteQueue;
+    } catch (error) {
+      this.logger.debug('Pending logs failed to write during completion', { error });
+    }
+
     if (this.tokenFlushTimer) {
       clearTimeout(this.tokenFlushTimer);
       this.tokenFlushTimer = undefined;
@@ -68,6 +76,13 @@ export class TaskProgressReporter {
   }
 
   async fail(error: Error | string): Promise<void> {
+    // Wait for any pending log writes before marking failed
+    try {
+      await this.logWriteQueue;
+    } catch (logError) {
+      this.logger.debug('Pending logs failed to write during fail', { error: logError });
+    }
+
     const message = typeof error === 'string' ? error : error.message;
     await this.update({ status: 'failed', error_message: message }, `Task execution failed: ${message}`);
   }
