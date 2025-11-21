@@ -1,0 +1,43 @@
+{
+  "actionabilityScore": 0.35,
+  "context": "The task asks to 'Add test to README.md' but this is ambiguous. It could mean: (1) adding a test coverage badge/section to the README, (2) adding documentation about running tests, (3) adding example test code snippets to the README, or (4) creating actual test files for the project. The repository appears to have no existing test files (.test.ts, .spec.ts), and no test framework is configured in the provided files.",
+  "keyFiles": [
+    "README.md"
+  ],
+  "blockers": [
+    "Task description is extremely vague - 'Add test to README.md' could mean multiple different things",
+    "No test framework appears to be set up in the repository",
+    "No existing tests found to use as reference",
+    "Unclear whether this is about documentation or actual test implementation"
+  ],
+  "questions": [
+    {
+      "id": "q1",
+      "question": "What exactly should be added to the README regarding testing?",
+      "options": [
+        "Add a 'Testing' section documenting how to run tests (with instructions for your chosen test framework)",
+        "Add a test coverage badge and reference to CI/CD pipeline in the README header",
+        "Add example test code snippets showing how to test the Agent SDK in the README"
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "Should we set up the test infrastructure first?",
+      "options": [
+        "Set up Vitest as the test framework (lightweight, Bun-native, modern), then add 'Testing' docs section to README",
+        "Set up Jest as the test framework (industry standard, extensive docs), then add 'Testing' docs section to README",
+        "Assume test framework already exists; just document how to run tests in README"
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "Should the README include runnable test examples or just documentation?",
+      "options": [
+        "Document how to write tests (e.g., 'bun test' command, test file naming conventions, example test structure)",
+        "Add actual example test code in a code block showing how to test the Agent class",
+        "Both documentation and a minimal example test"
+      ]
+    }
+  ],
+  "answered": false
+}
