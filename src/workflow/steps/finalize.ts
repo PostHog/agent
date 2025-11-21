@@ -1,6 +1,7 @@
 import type { LocalArtifact } from '../../file-manager.js';
 import type { Task, TaskRunArtifact } from '../../types.js';
 import type { WorkflowStepRunner } from '../types.js';
+import { finalizeStepGitActions } from '../utils.js';
 
 const MAX_SNIPPET_LENGTH = 1200;
 
@@ -48,6 +49,12 @@ export const finalizeStep: WorkflowStepRunner = async ({ step, context }) => {
     const prBody = buildPullRequestBody(task, artifacts, uploadedArtifacts);
     await fileManager.cleanupTaskDirectory(task.id);
     await gitManager.addAllPostHogFiles();
+    
+    // Commit the deletion of artifacts
+    await finalizeStepGitActions(context, step, {
+        commitMessage: `Cleanup task artifacts for ${task.title}`,
+        allowEmptyCommit: true
+    });
 
     context.stepResults[step.id] = {
         prBody,
@@ -78,7 +85,7 @@ function buildPullRequestBody(task: Task, artifacts: LocalArtifact[], uploaded?:
     if (contextArtifact) {
         lines.push('');
         lines.push('### Task prompt');
-        lines.push(renderCodeFence(contextArtifact.content));
+        lines.push(contextArtifact.content);
         usedFiles.add(contextArtifact.name);
     }
 
@@ -96,7 +103,7 @@ function buildPullRequestBody(task: Task, artifacts: LocalArtifact[], uploaded?:
     if (planArtifact) {
         lines.push('');
         lines.push('### Implementation plan');
-        lines.push(renderCodeFence(planArtifact.content));
+        lines.push(planArtifact.content);
         usedFiles.add(planArtifact.name);
     }
 
@@ -130,7 +137,9 @@ function buildPullRequestBody(task: Task, artifacts: LocalArtifact[], uploaded?:
         lines.push('');
         lines.push('### Uploaded artifacts');
         for (const artifact of artifactList) {
-            const storage = 'storage_path' in artifact && artifact.storage_path ? ` – \`${artifact.storage_path}\`` : '';
+            const rawStoragePath = 'storage_path' in artifact ? (artifact as any).storage_path : undefined;
+            const storagePath = typeof rawStoragePath === 'string' ? rawStoragePath : undefined;
+            const storage = storagePath && storagePath.trim().length > 0 ? ` – \`${storagePath.trim()}\`` : '';
             lines.push(`- ${artifact.name} (${artifact.type})${storage}`);
         }
     }

@@ -60,6 +60,12 @@ export class TaskRunProgressReporter {
 
   async complete(): Promise<void> {
     await this.flushTokens(); // Flush any remaining tokens before completion
+    try {
+      await this.logWriteQueue;
+    } catch (error) {
+      this.logger.debug('Pending logs failed to write during completion', { error });
+    }
+
     if (this.tokenFlushTimer) {
       clearTimeout(this.tokenFlushTimer);
       this.tokenFlushTimer = undefined;
@@ -68,6 +74,12 @@ export class TaskRunProgressReporter {
   }
 
   async fail(error: Error | string): Promise<void> {
+    try {
+      await this.logWriteQueue;
+    } catch (logError) {
+      this.logger.debug('Pending logs failed to write during fail', { error: logError });
+    }
+
     const message = typeof error === 'string' ? error : error.message;
     await this.update({ status: 'failed', error_message: message }, `Task execution failed: ${message}`);
   }
@@ -114,7 +126,6 @@ export class TaskRunProgressReporter {
 
     this.logWriteQueue = this.logWriteQueue
       .catch((error) => {
-        // Ensure previous failures don't block subsequent writes
         this.logger.debug('Previous log append failed', {
           taskId,
           runId,
