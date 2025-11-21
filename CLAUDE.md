@@ -4,16 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a TypeScript-based agent framework that wraps the Anthropic Claude Agent SDK, providing plan-and-execute capabilities for PostHog's Array desktop app and future backend services. It uses a Git-based workflow with file system storage for task artifacts. The project uses Bun runtime for execution.
+This is a TypeScript-based agent framework that wraps the Anthropic Claude Agent SDK, providing plan-and-execute capabilities for PostHog's Array desktop app and future backend services. It uses a Git-based workflow with file system storage for task artifacts.
 
 ## Essential Commands
 
 ```bash
 # Install dependencies
-bun install
+pnpm install
 
 # Run example usage (demonstrates all features)
-bun run example-usage.ts
+pnpm run example-usage.ts
 ```
 
 Note: No test, lint, or build scripts are currently defined in package.json.

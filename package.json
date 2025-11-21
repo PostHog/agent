@@ -29,9 +29,9 @@
   },
   "scripts": {
     "build": "rimraf dist && rollup -c && tsc --project tsconfig.build.json --emitDeclarationOnly",
-    "example": "bun run example-usage.ts",
-    "dev": "bun run example-usage.ts",
-    "prepublishOnly": "bun run build"
+    "example": "pnpm run example-usage.ts",
+    "dev": "pnpm run example-usage.ts",
+    "prepublishOnly": "pnpm run build"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -5,8 +5,8 @@ TypeScript agent framework that wraps the Claude Agent SDK for PostHog's Array d
 ## Quick Start
 
 ```bash
-bun install
-bun run example
+pnpm install
+pnpm run example
 ```
 
 ## Key Features
@@ -131,7 +131,7 @@ function handleLiveEvent(event: AgentEvent) {
 
 ## Requirements
 
-- Bun runtime
+- PNPM
 - Git repository
 - PostHog API access
 - Claude API access via `@anthropic-ai/claude-agent-sdk`
