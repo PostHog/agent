@@ -163,7 +163,16 @@ export class GitManager {
   async hasChanges(): Promise<boolean> {
     try {
       const status = await this.runGitCommand('status --porcelain');
-      return status.length > 0;
+      if (!status || status.trim().length === 0) {
+        return false;
+      }
+
+      const lines = status.split('\n').filter(line => {
+        const trimmed = line.trim();
+        return trimmed.length > 0 && !trimmed.includes('.posthog/');
+      });
+
+      return lines.length > 0;
     } catch {
       return false;
     }
