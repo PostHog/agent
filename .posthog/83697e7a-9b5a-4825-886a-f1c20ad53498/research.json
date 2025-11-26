@@ -1,0 +1,19 @@
+{
+  "actionabilityScore": 0.95,
+  "context": "The task is to update readme.md to contain 'hello'. This is a straightforward file modification task. The file either already exists at the repository root or needs to be created. The modification itself is clear and unambiguous.",
+  "keyFiles": [
+    "readme.md"
+  ],
+  "blockers": [],
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Should 'hello' be the entire file contents, or should it be appended/included alongside existing content?",
+      "options": [
+        "Replace entire file contents with just 'hello'",
+        "Append 'hello' to the end of existing readme.md content (if file exists)"
+      ]
+    }
+  ],
+  "answered": false
+}
