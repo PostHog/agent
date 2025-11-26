@@ -1,0 +1,44 @@
+{
+  "actionabilityScore": 0.62,
+  "context": "The task requests general README.md readability improvements for the PostHog Agent SDK documentation. The README is well-structured with 265 lines covering setup, features, usage, task execution, and permissions. However, the task description lacks specificity about which readability aspects to prioritize, making it difficult to determine exact implementation scope and success criteria.",
+  "keyFiles": [
+    "README.md"
+  ],
+  "blockers": [
+    "Task description is vague ('making it more legigible') without specifying which readability aspects to improve",
+    "No success metrics defined - unclear what constitutes 'improved readability'",
+    "Multiple valid improvement approaches identified, requiring prioritization",
+    "Unclear if this is a minor formatting pass or restructuring of major sections"
+  ],
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Which readability improvements should be prioritized?",
+      "options": [
+        "Add table of contents and section anchors - improves navigation and helps users jump to relevant sections quickly",
+        "Reorganize permissions section with clearer structure and 'when to use' guidance - makes advanced features more approachable",
+        "Add a 'Core Concepts' section early in the document - establishes vocabulary before diving into code examples",
+        "All of the above - comprehensive restructuring for maximum readability improvement"
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "What is the target audience for readability improvements?",
+      "options": [
+        "Beginner developers - prioritize clearer explanations, simpler first examples, more step-by-step guidance",
+        "Experienced developers - optimize for quick scanning, consolidate reference material, assume familiarity with agents/APIs",
+        "Both audiences equally - balance quick-start simplicity with advanced feature documentation"
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "Should the scope include structural changes or only formatting/presentation improvements?",
+      "options": [
+        "Formatting only - improve spacing, add callout boxes, enhance code block presentation without reorganizing content",
+        "Reorganization included - restructure sections, consolidate scattered content, reorder for better flow (more comprehensive but higher effort)",
+        "Minimal changes - focus on quick wins like table of contents and section headers without major restructuring"
+      ]
+    }
+  ],
+  "answered": false
+}
